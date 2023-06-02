@@ -29,5 +29,7 @@ export class Workbench {
 }
 
 export class Path {
-
+  public foo: string;
+  private bar: string;
+  protected baz: string;
 }
