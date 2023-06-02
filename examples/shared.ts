@@ -7,3 +7,21 @@ export interface Context {
 export interface Logger {
   log(...args: any[]);
 }
+
+export interface AfterEditorProvider {
+  afterEditor(): Component;
+}
+
+
+export interface BelowEditorProvider {
+  belowEditor(): Component;
+}
+
+export class Workbench {
+  belowEditorExts: BelowEditorProvider[];
+  afterEditorExts: AfterEditorProvider[];
+}
+
+export class Path {
+  
+}
