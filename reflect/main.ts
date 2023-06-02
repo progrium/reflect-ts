@@ -13,10 +13,11 @@
 // - Record<string, number>
 //
 
-import * as tsAstParser from "./core/src/index.ts";
 import ts from "npm:typescript@5.0.4";
 import path from 'node:path';
 import { expandGlobSync } from "https://deno.land/std@0.121.0/fs/expand_glob.ts";
+
+import * as ast from './ast.ts';
 
 //
 // Helpers
@@ -37,6 +38,9 @@ const assert = (cond, message, ...rest) => {
     Deno.exit(1);
   }
 };
+
+/*
+import * as tsAstParser from "./core/src/index.ts";
 
 const parseFromSource = (code, compilerOptions) => {
   const defaultCompilerOptions = {
@@ -59,6 +63,7 @@ const parseFromSource = (code, compilerOptions) => {
   const mod = tsAstParser.parseFromSource(builtinDecls + code, compilerOptions || defaultCompilerOptions);
   return mod;
 };
+*/
 
 //
 // Main
@@ -73,11 +78,17 @@ const main = async () => {
   if (f.isFile)
   {
     const code = Deno.readTextFileSync(filePath);
+    /*
     const mod = parseFromSource(code);
     mod._node.fileName = path.resolve(filePath);
-
     const json = mod.serialize();
     Deno.writeTextFileSync("output.json", JSON.stringify(json, null, 2));
+    */
+
+    const sourceFile = ast.parseFromSource(filePath, code);
+
+    const results = ast.dumpTree(sourceFile);
+    console.log(results.children);
   }
   else
   {
