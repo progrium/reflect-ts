@@ -24,8 +24,4 @@ export interface FileStore {
   async writeFile(path: string, contents: string);
 }
 
-export class Workbench {
-  auth: Authenticator|null;
-  index: SearchIndex;
-  files: FileStore;
-}
+
