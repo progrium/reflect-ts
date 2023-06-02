@@ -3,7 +3,7 @@ export interface Vnode {
   tag: String|Object;
   key?: String;
   attrs?: Object;
-  children?: Array|String|Number|Boolean;
+  children?: Array<any>|String|Number|Boolean;
   text?: String|Number|Boolean;
   dom?: Element; // assume this isn't defined
   domSize?: Number;
