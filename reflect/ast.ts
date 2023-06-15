@@ -1,5 +1,7 @@
 import ts from "npm:typescript@5.0.4";
 
+const print = (...args) => console.log(...args);
+
 export const parseFromSource = (fileName, code) => {
   const sourceFile = ts.createSourceFile(fileName, code, ts.ScriptTarget.Latest);
   return sourceFile;
@@ -19,6 +21,22 @@ export const isExported = (node) => {
 
   return false;
 };
+
+export const hasFlag = (flags, flagToCheck) => {
+  return (flags & flagToCheck) === flagToCheck;
+}
+
+export const isOptional = (node) => {
+  if (node.symbol) {
+    return hasFlag(node.symbol.flags, ts.SymbolFlags.Optional);
+  }
+
+  if (node.questionToken) {
+    return true;
+  }
+
+  return false;
+}
 
 export const getName = (node) => {
   if (node.escapedText) {
@@ -41,24 +59,6 @@ export const getName = (node) => {
   return null;
 };
 
-export const getType = (node) => {
-  if (ts.isInterfaceDeclaration(node)) return 'interface';
-  if (ts.isUnionTypeNode(node)) return 'union';
-  if (ts.isClassDeclaration(node)) return 'class';
-  if (ts.isEnumDeclaration(node)) return 'enum';
-  if (ts.isFunctionDeclaration(node)) return 'function';
-  if (ts.isMethodDeclaration(node)) return 'method';
-  if (ts.isPropertyDeclaration(node)) return 'property';
-  if (ts.isGetAccessor(node)) return 'getter';
-  if (ts.isSetAccessor(node)) return 'setter';
-  if (ts.isImportDeclaration(node)) return 'import';
-  if (ts.isExportDeclaration(node)) return 'export';
-  if (ts.isTypeAliasDeclaration(node)) return 'type';
-  if (ts.isTypeReferenceNode(node)) return 'ref';
-
-  return null;
-};
-
 export const getChildren = (rootNode) => {
   let results = [];
   ts.forEachChild(rootNode, (node) => {
@@ -73,12 +73,15 @@ export const getChildren = (rootNode) => {
   return results;
 }
 
-export const getTSKindName = (kind) => {
-  const found = Object.entries(ts.SyntaxKind).find(([key, value]) => value === kind);
-  if (found) {
-    return found[0];
-  }
-}
+const tsSyntaxKindToName = {};
+Object.entries(ts.SyntaxKind).forEach(([key, value]) => {
+  tsSyntaxKindToName[value] = key;
+});
+
+export const getKind = (kind) => {
+  if (kind.kind) kind = kind.kind;
+  return tsSyntaxKindToName[kind] || null;
+};
 
 /*
 const getExtends = (node) => {
@@ -89,12 +92,172 @@ const getExtends = (node) => {
 };
 */
 
+export const getProperties = (node) => {
+  return node.members.filter((it) => {
+    const kind = getKind(it);
+    return kind === 'PropertySignature' || kind === 'PropertyDeclaration';
+  });
+};
+
+export const getMethods = (node) => {
+  return node.members.filter((it) => {
+    const kind = getKind(it);
+    return kind === 'MethodSignature' || kind === 'MethodDeclaration';
+  });
+}
+
 export const dumpTree = (node) => {
   return {
-    kind: getTSKindName(node.kind),
-    type: getType(node),
+    kind: getKind(node.kind),
     name: getName(node),
     children: getChildren(node).map((child) => dumpTree(child)),
     exported: isExported(node),
   };
+};
+
+const parseTypes = (type, code) => {
+  let result = { kind: getKind(type), types: [] };
+
+  if (result.kind === 'FunctionType' || result.kind === 'MethodSignature' || result.kind === 'MethodDeclaration') {
+    return {
+      kind: result.kind,
+      parameters: type.parameters.map((it) => ({
+        name: it.name?.escapedText,
+        optional: isOptional(it),
+        types: parseTypes(it, code),
+      })),
+      returnType: parseTypes(type.type, code),
+    };
+  }
+
+  if (type.type) {
+    return parseTypes(type.type, code);
+  }
+
+  // NOTE(nick): reduce types into simpler things if possible
+  if (result.kind === 'StringKeyword') return 'string';
+  if (result.kind === 'NumberKeyword') return 'number';
+  if (result.kind === 'BooleanKeyword') return 'boolean';
+  if (result.kind === 'ObjectKeyword') return 'object';
+  if (result.kind === 'VoidKeyword') return 'void';
+  if (result.kind === 'UndefinedKeyword') return 'undefined';
+
+  if (type.types)
+  {
+    result.types = type.types.map((it) => parseTypes(it, code));
+    return result;
+  }
+
+  if (type.elementType)
+  {
+    // NOTE(nick): arrays
+    result.types = [parseTypes(type.elementType, code)];
+  }
+  else if (type.typeArguments)
+  {
+    result = {
+      kind: 'GenericType',
+      name: type.typeName.escapedText,
+      typeArguments: type.typeArguments.map((it) => parseTypes(it, code)),
+    };
+
+    // NOTE(nick): special case for array type
+    if (result.name === 'Array')
+    {
+      result.kind = 'ArrayType';
+      result.typeArguments = [result.typeArguments[0]];
+    }
+
+    if (result.name === 'Record')
+    {
+      result.kind = 'ObjectType';
+    }
+  }
+  else if (type.typeName)
+  {
+      result = parseTypes(type.typeName, code);
+  }
+  else
+  {
+    const text = code.slice(type.pos, type.end).trim();
+    if (text === 'null') return 'null';
+    result.types = [{ text }];
+  }
+
+  return result;
+};
+
+export const resolveIdentifier = (rootNode, name) => {
+  const children = getChildren(rootNode);
+  for (let i = 0; i < children.length; i += 1)
+  {
+    const node = children[i];
+    if (getName(node) === name) {
+      return node;
+    }
+  }
+  return null;
+};
+
+export const resolveNestedIdentifierTypes = (context, types) => {
+};
+
+export const inflate = (schema, node, context = { code: '', filePath: '' }) => {
+  print("[inflate]", getKind(node), getName(node));
+  const kind = getKind(node);
+  const name = getName(node);
+
+  switch (kind)
+  {
+    case 'ClassDeclaration':
+    case 'InterfaceDeclaration': {
+      const props = getProperties(node);
+      props.forEach((prop) => {
+        const name = getName(prop);
+        const types = parseTypes(prop, context.code);
+        const optional = isOptional(prop);
+        print("prop", name, optional, types);
+      });
+
+      const methods = getMethods(node);
+      methods.forEach((method) => {
+        const name = getName(method);
+        const types = parseTypes(method, context.code);
+        const optional = isOptional(method);
+        print("method", name, optional, types);
+      });
+    } break;
+
+    case 'TypeAliasDeclaration': {
+      const name = getName(node);
+
+      const types = parseTypes(node.type, context.code);
+      print("type", name, types);
+      //const idents = resolveNestedIdentifierTypes(context, types);
+    } break;
+
+    default: {
+      print("[inflate] Unhandled TS node kind:", kind, name);
+    } break;
+  }
+};
+
+export const generateSchemaFromFile = (filePath) => {
+  const schema = { All: [], Types: {} };
+
+  const code = Deno.readTextFileSync(filePath);
+  const rootNode = parseFromSource(filePath, code);
+
+  const children = getChildren(rootNode);
+  for (let i = 0; i < children.length; i += 1)
+  {
+    const node = children[i];
+    const exported = isExported(node);
+    if (exported)
+    {
+      inflate(schema, node, { code, filePath, rootNode });
+    }
+  }
+
+  return schema;
 };

@@ -39,7 +39,6 @@ const assert = (cond, message, ...rest) => {
   }
 };
 
-/*
 import * as tsAstParser from "./core/src/index.ts";
 
 const parseFromSource = (code, compilerOptions) => {
@@ -49,6 +48,10 @@ const parseFromSource = (code, compilerOptions) => {
     module: ts.ModuleKind.ESNext,
     declaration: true,
     allowJs: true,
+    lib: ["es2018", "dom"],
+    allowImportingTsExtensions: true,
+    noEmit: true,
+    moduleResolution: "bundler",
   };
 
   const builtinDecls = `
@@ -63,7 +66,6 @@ const parseFromSource = (code, compilerOptions) => {
   const mod = tsAstParser.parseFromSource(builtinDecls + code, compilerOptions || defaultCompilerOptions);
   return mod;
 };
-*/
 
 //
 // Main
@@ -77,7 +79,6 @@ const main = async () => {
 
   if (f.isFile)
   {
-    const code = Deno.readTextFileSync(filePath);
     /*
     const mod = parseFromSource(code);
     mod._node.fileName = path.resolve(filePath);
@@ -85,10 +86,7 @@ const main = async () => {
     Deno.writeTextFileSync("output.json", JSON.stringify(json, null, 2));
     */
 
-    const sourceFile = ast.parseFromSource(filePath, code);
-
-    const results = ast.dumpTree(sourceFile);
-    console.log(results.children);
+    const results = ast.generateSchemaFromFile(filePath);
   }
   else
   {
@@ -103,10 +101,14 @@ const main = async () => {
 
     const files = Array.from(expandGlobSync(`${filePath}\/**\/*.ts`)).map((it) => it.path);
 
+    /*
     const mods = files.map((it) => {
       const code = Deno.readTextFileSync(it);
       return parseFromSource(code, tsConfig?.compilerOptions);
     });
+    */
+
+    const mods = tsAstParser.parseFromFiles(files, tsConfig?.compilerOptions);
 
     console.log(mods.map((mod) => mod.serialize()));
   }
