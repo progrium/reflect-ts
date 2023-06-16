@@ -99,10 +99,37 @@ export type MyOptionalList = Array<string> | null;
 //export type StringList = string[];
 
 // 15
+/*
 import { Vector2 } from './math.ts';
 
 export type Rectangle = {
   p0: Vector2;
   p1: Vector2;
 };
+*/
 
+// 16
+/*
+interface StringArray extends Array<string> { }
+
+interface Person {
+  name: string;
+}
+
+interface Employee {
+  salary: number;
+}
+
+interface Developer extends Person, Employee { }
+
+type Node = string | number | boolean;
+interface NodeArray extends Array<Node> { }
+
+type Human = {
+  name: string;
+}
+
+type Computer_Programmer = Partial<Human> & {
+  eatsPizza: boolean;
+};
+*/

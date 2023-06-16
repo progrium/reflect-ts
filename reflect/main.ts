@@ -45,11 +45,10 @@ const main = async () => {
   {
     const schema = ast.generateSchemaFromFiles([
       "C:\\dev\\_projects\\progrium\\reflect-ts\\examples\\test.ts",
-      "C:\\dev\\_projects\\progrium\\reflect-ts\\examples\\math.ts",
+      //"C:\\dev\\_projects\\progrium\\reflect-ts\\examples\\math.ts",
     ]);
 
-    const output = JSON.stringify(schema, null, 2);
-    Deno.writeTextFileSync("output.json", output);
+    Deno.writeTextFileSync("output.json", ast.toJSON(schema));
   }
   else
   {

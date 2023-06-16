@@ -96,15 +96,6 @@ export const getKind = (kind) => {
   return null;
 };
 
-/*
-const getExtends = (node) => {
-  const extends = node.heritageClauses?.find(clause => clause.token === ts.SyntaxKind.ExtendsKeyword);
-  if (extends) {
-    return extens.types
-  }
-};
-*/
-
 export const getProperties = (node) => {
   return node.members.filter((it) => {
     const kind = getKind(it);
@@ -117,6 +108,14 @@ export const getMethods = (node) => {
     const kind = getKind(it);
     return kind === 'MethodSignature' || kind === 'MethodDeclaration';
   });
+}
+
+export const getExtends = (node) => {
+  if (node.heritageClauses?.length > 0) {
+    // @Incomplete: can heritageClauses ever be > 1?
+    return node.heritageClauses[0].types;
+  }
+  return [];
 }
 
 class Type {
@@ -163,6 +162,7 @@ const makeType = (obj = {}) => new Type({
 
   // for Classes
   Methods: [],
+  Extends: [],
 
   // for Funcs
   IsVariadic: false,
@@ -219,6 +219,17 @@ const makeInternalType = (schema, name) => {
 }
 
 const makeLiteralType = (schema, name) => {
+  // TODO(nick): figure out how to load default types for things?
+  // e.g. lib.es5.d.ts
+  
+  /*
+  const BUILTIN_TYPES = ['Partial'];
+  if (BUILTIN_TYPES.includes(name))
+  {
+    return makeInternalType(schema, name);
+  }
+  */
+
   if (!schema.Types[name])
   {
     const type = makeType({ Kind: 'type', Name: name, PkgPath: '<unknown>' });
@@ -233,6 +244,30 @@ const makeReferenceType = (schema, t) => {
   schema.Types[t.Name] = t;
   return result;
 }
+
+const maybeWrapBuiltinType = (node, typeName, context) => {
+  // NOTE(nick): special cases
+  if (typeName === 'Array') {
+    const result = makeType({
+      Kind: 'array',
+      PkgPath: context.filePath,
+      Elem: node.typeArguments?.length > 0 ? inflate(node.typeArguments[0], context) : null,
+    });
+    return result;
+  }
+
+  if (typeName === 'Record') {
+    const result = makeType({
+      Kind: 'map',
+      PkgPath: context.filePath,
+      Key: node.typeArguments?.length > 0 ? inflate(node.typeArguments[0], context) : null,
+      Elem: node.typeArguments?.length > 0 ? inflate(node.typeArguments[1], context) : null,
+    });
+    return result;
+  }
+
+  return null;
+};
 
 export const inflate = (node, context) => {
   const { schema, filePath } = context;
@@ -265,7 +300,6 @@ export const inflate = (node, context) => {
     case 'ClassDeclaration':
     case 'InterfaceDeclaration': {
       // @Incomplete: parse `extends` keyword
-
       const result = makeType({ Name: name, Kind: 'struct', PkgPath: filePath });
 
       const props = getProperties(node);
@@ -300,12 +334,20 @@ export const inflate = (node, context) => {
           field.Optional = true;
         }
 
-        field.Visibility = getAccessModifier(prop);
-        //field.Self = result; // will produce a circlular reference (not JSON serializable!)
-        field.Self = makeReferenceType(schema, result);
+        field.Visibility = getAccessModifier(field);
+        field.Self = result; // will produce a circlular reference (not JSON serializable!)
 
         result.Methods.push(field);
       });
+
+      const baseTypes = getExtends(node);
+      if (baseTypes.length > 0)
+      {
+        baseTypes.forEach((baseType) => {
+          result.Extends.push(inflate(baseType, context));
+        });
+      }
+
 
       return result;
     } break;
@@ -377,28 +419,30 @@ export const inflate = (node, context) => {
       return nestedType;
     } break;
 
+    case 'ExpressionWithTypeArguments': {
+      const typeName = node.expression.escapedText;
+
+      const builtin = maybeWrapBuiltinType(node, typeName, context);
+      if (builtin) {
+        return builtin;
+      }
+
+      // imported from another file
+      if (schema.Types[typeName]) {
+        return schema.Types[typeName];
+      }
+
+      print("[inflate] Unresolved ExpressionWithTypeArguments for typeName:", typeName);
+      return null;
+    } break;
+
     case 'TypeReference': {
       if (node.typeName?.escapedText) {
         const typeName = node.typeName.escapedText;
 
-        // NOTE(nick): special cases
-        if (typeName === 'Array') {
-          const result = makeType({
-            Kind: 'array',
-            PkgPath: filePath,
-            Elem: node.typeArguments?.length > 0 ? inflate(node.typeArguments[0], context) : null,
-          });
-          return result;
-        }
-
-        if (typeName === 'Record') {
-          const result = makeType({
-            Kind: 'map',
-            PkgPath: filePath,
-            Key: node.typeArguments?.length > 0 ? inflate(node.typeArguments[0], context) : null,
-            Elem: node.typeArguments?.length > 0 ? inflate(node.typeArguments[1], context) : null,
-          });
-          return result;
+        const builtin = maybeWrapBuiltinType(node, typeName, context);
+        if (builtin) {
+          return builtin;
         }
 
         // imported from another file
@@ -438,6 +482,17 @@ export const inflate = (node, context) => {
       return result;
     } break;
 
+    case 'IntersectionType': {
+      const types = node.types.map((it) => inflate(it, context));
+      const result = makeType({
+        Kind: 'intersection',
+        Name: name,
+        PkgPath: filePath,
+        Types: types
+      });
+      return result;
+    } break;
+
     case 'ArrayType': {
       const result = makeType({
         Kind: 'array',
@@ -449,7 +504,7 @@ export const inflate = (node, context) => {
     } break;
 
     case 'LiteralType': {
-      const code = rootNode.text;
+      const code = context.rootNode.text;
       // @Incomplete: shouldn't null types actually be propagated upwards to make things optional?
       const literalName = node.literal ? code.slice(node.pos, node.end).trim() : null;
       if (literalName === 'null') {
@@ -457,6 +512,16 @@ export const inflate = (node, context) => {
       }
 
       print("[inflate] Unhandled literal type:", literalName);
+    } break;
+
+    case 'Identifier': {
+      const identName = node.escapedText;
+      if (identName) {
+        return schema.Types[identName];
+      }
+
+      print("[inflate] Unresolved identifier type:", identName);
+      return null;
     } break;
 
     // NOTE(nick): reduce types into simpler things if possible
@@ -556,3 +621,18 @@ export const generateSchemaFromFiles = (filePaths, options) => {
 export const generateSchemaFromFile = (filePath) => {
   return generateSchemaFromFiles([filePath]);
 }
+
+export const generateSchemaWithImports = (filePath) => {
+};
+
+export const toJSON = (schema) => {
+  const replacer = (k, v) => {
+    if (k === 'Self' && v?.Kind === 'struct') {
+      return makeReferenceType(schema, v);
+    }
+
+    return v;
+  };
+
+  return JSON.stringify(schema, replacer, 2);
+};
