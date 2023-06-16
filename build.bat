@@ -3,5 +3,5 @@
 set project_root=%~dp0%
 
 pushd %project_root%\reflect
-    deno run --allow-read=.. --allow-write=.. .\main.ts ..\examples\
+    deno run --allow-read=.. --allow-write=.. .\main.ts ..\examples\test.ts
 popd

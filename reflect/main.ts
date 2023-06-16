@@ -41,14 +41,12 @@ const main = async () => {
 
   //assert(f.isFile, `Only files are supported, but got directory: "${filePath}"`);
 
+  let schema = null;
+
   if (f.isFile)
   {
-    const schema = ast.generateSchema(filePath);
-
-    console.log("schema.Types =", schema.Types);
-    console.log("schema.Exports =", schema.Exports().map((it) => it.Name));
-    
-    Deno.writeTextFileSync("output.json", ast.toJSON(schema));
+    // TODO(nick): allow an option to specify a tsconfig path?
+    schema = ast.generateSchema(filePath);
   }
   else
   {
@@ -61,11 +59,14 @@ const main = async () => {
       }
     }
 
+    // TODO(nick): actually parse the `includes` in the `tsconfig`?
     const files = Array.from(expandGlobSync(`${filePath}\/**\/*.ts`)).map((it) => it.path);
 
-    // @Incomplete: mulitple file support doesn't accept TSConfig yet
-    const schema = ast.generateSchemaFromFiles(files, tsConfig?.compilerOptions);
+    schema = ast.generateSchemaFromFiles(files, tsConfig?.compilerOptions);
+  }
 
+  if (schema)
+  {
     console.log("schema.Types =", schema.Types);
     console.log("schema.Exports =", schema.Exports().map((it) => it.Name));
 

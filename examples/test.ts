@@ -134,9 +134,9 @@ type Computer_Programmer = Partial<Human> & {
 };
 */
 
-import { Vector2 } from './math.ts';
-
-export type Rectangle = {
-  p0: Vector2;
-  p1: Vector2;
+// 17
+/*
+export interface Bank_Account {
+  readonly balance: number;
 };
+*/

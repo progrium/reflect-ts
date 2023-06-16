@@ -26,6 +26,8 @@ export const getAccessModifier = (node) => {
       if (modifiers.some((it) => it.kind === ts.SyntaxKind.PublicKeyword)) return 'public';
       if (modifiers.some((it) => it.kind === ts.SyntaxKind.ProtectedKeyword)) return 'protected';
       if (modifiers.some((it) => it.kind === ts.SyntaxKind.PrivateKeyword)) return 'private';
+      // @Incomplete: you should be able to have a `readonly public` member - how should we handle that?
+      if (modifiers.some((it) => it.kind === ts.SyntaxKind.ReadonlyKeyword)) return 'readonly';
     }
   }
 
@@ -70,18 +72,11 @@ export const getName = (node) => {
 };
 
 export const getChildren = (rootNode) => {
-  let results = [];
+  const results = [];
   ts.forEachChild(rootNode, (node) => {
     if (node.kind === ts.SyntaxKind.EndOfFileToken) return;
     results.push(node);
   });
-
-  /*
-  if (ts.isInterfaceDeclaration(rootNode)) {
-    results = results.filter((it) => it.kind === ts.SyntaxKind.PropertySignature);
-  }
-  */
-
   return results;
 }
 
