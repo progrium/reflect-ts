@@ -43,11 +43,11 @@ const main = async () => {
 
   if (f.isFile)
   {
-    const schema = ast.generateSchemaFromFiles([
-      "C:\\dev\\_projects\\progrium\\reflect-ts\\examples\\test.ts",
-      //"C:\\dev\\_projects\\progrium\\reflect-ts\\examples\\math.ts",
-    ]);
+    const schema = ast.generateSchema(filePath);
 
+    console.log("schema.Types =", schema.Types);
+    console.log("schema.Exports =", schema.Exports().map((it) => it.Name));
+    
     Deno.writeTextFileSync("output.json", ast.toJSON(schema));
   }
   else
@@ -66,8 +66,10 @@ const main = async () => {
     // @Incomplete: mulitple file support doesn't accept TSConfig yet
     const schema = ast.generateSchemaFromFiles(files, tsConfig?.compilerOptions);
 
-    const output = JSON.stringify(schema, null, 2);
-    Deno.writeTextFileSync("output.json", output);
+    console.log("schema.Types =", schema.Types);
+    console.log("schema.Exports =", schema.Exports().map((it) => it.Name));
+
+    Deno.writeTextFileSync("output.json", ast.toJSON(schema));
   }
 };
 

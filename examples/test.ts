@@ -133,3 +133,10 @@ type Computer_Programmer = Partial<Human> & {
   eatsPizza: boolean;
 };
 */
+
+import { Vector2 } from './math.ts';
+
+export type Rectangle = {
+  p0: Vector2;
+  p1: Vector2;
+};

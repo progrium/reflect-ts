@@ -76,9 +76,11 @@ export const getChildren = (rootNode) => {
     results.push(node);
   });
 
+  /*
   if (ts.isInterfaceDeclaration(rootNode)) {
     results = results.filter((it) => it.kind === ts.SyntaxKind.PropertySignature);
   }
+  */
 
   return results;
 }
@@ -150,6 +152,10 @@ class Schema {
   All = () => {
     return Object.values(this.Types);
   };
+
+  GetTypesByName = (name) => {
+    return this.All().filter((it) => it.name === name);
+  };
 };
 
 const makeType = (obj = {}) => new Type({
@@ -207,6 +213,22 @@ const makeArgument = (obj = {}) => new Argument({
 });
 
 const makeSchema = () => new Schema({});
+
+const mergeSchemas = (a, b, options = { exportsOnly: false }) => {
+  const result = makeSchema();
+
+  a.All().forEach((it) => {
+    const fullName = it.Name.startsWith(it.PkgPath) ? it.Name : `${it.PkgPath}__${it.Name}`;
+    result.Types[fullName] = it;
+  });
+
+  b.All().forEach((it) => {
+    const fullName = it.Name.startsWith(it.PkgPath) ? it.Name : `${it.PkgPath}__${it.Name}`;
+    result.Types[fullName] = it;
+  });
+
+  return result;
+};
 
 const makeInternalType = (schema, name) => {
   if (!schema.Types[name])
@@ -269,6 +291,10 @@ const maybeWrapBuiltinType = (node, typeName, context) => {
   return null;
 };
 
+const resolveImport = (currentFilePath, importPath) => {
+  return path.resolve(path.dirname(currentFilePath), importPath);
+};
+
 export const inflate = (node, context) => {
   const { schema, filePath } = context;
 
@@ -281,7 +307,7 @@ export const inflate = (node, context) => {
   {
     case 'ImportDeclaration': {
       const globalContext = context.global;
-      const importPath = path.resolve(path.dirname(filePath), node.moduleSpecifier.text);
+      const importPath = resolveImport(filePath, node.moduleSpecifier.text);
       const importSchema = processSourceFile(context.global, importPath);
 
       node.importClause.namedBindings.elements.forEach((binding) => {
@@ -589,40 +615,66 @@ export const processSourceFile = (globals, filePath) => {
   return schema;
 };
 
-export const generateSchemaFromFiles = (filePaths, options) => {
+export const generateSchemaFromFiles = (filePaths, tsCompilerOptions = null) => {
   filePaths = filePaths.map((it) => {
     return path.resolve(it);
   });
 
-  if (!options) {
-    options = {  compilerOptions: { target: ts.ScriptTarget.Latest } };
+  if (!tsCompilerOptions) {
+    tsCompilerOptions = { target: ts.ScriptTarget.Latest };
   }
 
-  const program = ts.createProgram(filePaths, options);
+  const program = ts.createProgram(filePaths, tsCompilerOptions);
 
   const globalContext = {
     imports: {},
     program,
   };
 
-  let schema = null;
+  let schema = makeSchema();
   for (let file_index = 0; file_index < filePaths.length; file_index += 1)
   {
     const filePath = filePaths[file_index];
-    schema = processSourceFile(globalContext, filePath);
+    const fileSchema = processSourceFile(globalContext, filePath);
+    schema = mergeSchemas(schema, fileSchema);
   }
-
-  console.log("schema.Types =", schema.Types);
-  console.log("schema.Exports =", schema.Exports().map((it) => it.Name));
 
   return schema;
 };
 
-export const generateSchemaFromFile = (filePath) => {
-  return generateSchemaFromFiles([filePath]);
-}
+export const followAllImportsFromFile = (filePath, tsTarget = ts.ScriptTarget.Latest) => {
+  const seen = {};
 
-export const generateSchemaWithImports = (filePath) => {
+  const follow = [path.resolve(filePath)];
+  while (follow.length > 0)
+  {
+    const filePath = follow[0];
+    seen[filePath] = true;
+
+    const code = Deno.readTextFileSync(filePath);
+    const sourceFile = ts.createSourceFile(filePath, code, ts.ScriptTarget.Latest);
+
+    const children = getChildren(sourceFile).filter((it) => getKind(it) === 'ImportDeclaration');
+    for (let i = 0; i < children.length; i += 1)
+    {
+      const node = children[i];
+      const importPath = resolveImport(filePath, node.moduleSpecifier.text);
+      if (!seen[importPath]) {
+        follow.push(importPath);
+      }
+    }
+
+    follow.shift();
+  }
+
+  return Object.keys(seen);
+};
+
+export const generateSchema = (filePath, tsCompilerOptions = null) => {
+  const target = tsCompilerOptions?.target || ts.ScriptTarget.Latest;
+  const imports = followAllImportsFromFile(path.resolve(filePath), target);
+
+  return generateSchemaFromFiles(imports, tsCompilerOptions);
 };
 
 export const toJSON = (schema) => {
