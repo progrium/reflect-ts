@@ -3,16 +3,6 @@
 // > deno run --allow-read=.. --allow-write=.. .\main.ts ..\examples\mithril.ts
 //
 
-//
-// TODO(nick):
-// - classes
-// - fields
-// - methods
-// - getters/setters (modeled as fields)
-// - union types (non-templated)
-// - Record<string, number>
-//
-
 import ts from "npm:typescript@5.0.4";
 import path from 'node:path';
 import { expandGlobSync } from "https://deno.land/std@0.121.0/fs/expand_glob.ts";
@@ -39,34 +29,6 @@ const assert = (cond, message, ...rest) => {
   }
 };
 
-import * as tsAstParser from "./core/src/index.ts";
-
-const parseFromSource = (code, compilerOptions) => {
-  const defaultCompilerOptions = {
-    experimentalDecorators: true,
-    target: ts.ScriptTarget.Latest,
-    module: ts.ModuleKind.ESNext,
-    declaration: true,
-    allowJs: true,
-    lib: ["es2018", "dom"],
-    allowImportingTsExtensions: true,
-    noEmit: true,
-    moduleResolution: "bundler",
-  };
-
-  const builtinDecls = `
-  type Array<T> = T[];
-  type String = string;
-  type Object = object;
-  type Boolean = boolean;
-  type Number = number;
-  type Element = unknown;
-  `;
-
-  const mod = tsAstParser.parseFromSource(builtinDecls + code, compilerOptions || defaultCompilerOptions);
-  return mod;
-};
-
 //
 // Main
 //
@@ -79,14 +41,8 @@ const main = async () => {
 
   if (f.isFile)
   {
-    /*
-    const mod = parseFromSource(code);
-    mod._node.fileName = path.resolve(filePath);
-    const json = mod.serialize();
-    Deno.writeTextFileSync("output.json", JSON.stringify(json, null, 2));
-    */
-
     const schema = ast.generateSchemaFromFile(filePath);
+    
     const output = JSON.stringify(schema, null, 2);
     Deno.writeTextFileSync("output.json", output);
   }
@@ -103,16 +59,11 @@ const main = async () => {
 
     const files = Array.from(expandGlobSync(`${filePath}\/**\/*.ts`)).map((it) => it.path);
 
-    /*
-    const mods = files.map((it) => {
-      const code = Deno.readTextFileSync(it);
-      return parseFromSource(code, tsConfig?.compilerOptions);
-    });
-    */
+    // @Incomplete: mulitple file support doesn't accept TSConfig yet
+    const schema = ast.generateSchemaFromFiles(files, tsConfig?.compilerOptions);
 
-    const mods = tsAstParser.parseFromFiles(files, tsConfig?.compilerOptions);
-
-    console.log(mods.map((mod) => mod.serialize()));
+    const output = JSON.stringify(schema, null, 2);
+    Deno.writeTextFileSync("output.json", output);
   }
 };
 
