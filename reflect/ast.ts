@@ -350,6 +350,7 @@ export const inflate = (node, context) => {
         return result;
       }
 
+      // @Incomplete: should we always overwrite this type?
       nestedType.Name = name;
 
       schema.Types[name] = nestedType;
@@ -422,15 +423,6 @@ export const inflate = (node, context) => {
       return result;
     } break;
 
-    // NOTE(nick): reduce types into simpler things if possible
-    case 'StringKeyword':    { return makeInternalType(schema, 'string'); } break;
-    case 'NumberKeyword':    { return makeInternalType(schema, 'number'); } break;
-    case 'BooleanKeyword':   { return makeInternalType(schema, 'boolean'); } break;
-    case 'ObjectKeyword':    { return makeInternalType(schema, 'object'); } break;
-    case 'VoidKeyword':      { return makeInternalType(schema, 'void'); } break;
-    case 'UndefinedKeyword': { return makeInternalType(schema, 'undefined'); } break;
-    case 'AnyKeyword':       { return makeInternalType(schema, 'any'); } break;
-
     case 'LiteralType': {
       // @Incomplete: shouldn't null types actually be propagated upwards to make things optional?
       const literalName = node.literal ? context.code.slice(node.pos, node.end).trim() : null;
@@ -440,6 +432,15 @@ export const inflate = (node, context) => {
 
       print("[inflate] Unhandled literal type:", literalName);
     } break;
+
+    // NOTE(nick): reduce types into simpler things if possible
+    case 'StringKeyword':    { return makeInternalType(schema, 'string'); } break;
+    case 'NumberKeyword':    { return makeInternalType(schema, 'number'); } break;
+    case 'BooleanKeyword':   { return makeInternalType(schema, 'boolean'); } break;
+    case 'ObjectKeyword':    { return makeInternalType(schema, 'object'); } break;
+    case 'VoidKeyword':      { return makeInternalType(schema, 'void'); } break;
+    case 'UndefinedKeyword': { return makeInternalType(schema, 'undefined'); } break;
+    case 'AnyKeyword':       { return makeInternalType(schema, 'any'); } break;
 
     default: {
       print("[inflate] Unhandled TS node kind:", kind, name);

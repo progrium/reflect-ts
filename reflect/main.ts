@@ -86,7 +86,9 @@ const main = async () => {
     Deno.writeTextFileSync("output.json", JSON.stringify(json, null, 2));
     */
 
-    const results = ast.generateSchemaFromFile(filePath);
+    const schema = ast.generateSchemaFromFile(filePath);
+    const output = JSON.stringify(schema, null, 2);
+    Deno.writeTextFileSync("output.json", output);
   }
   else
   {

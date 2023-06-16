@@ -3,7 +3,7 @@ import { Component } from "./mithril.ts";
 
 export interface Context {
   value(key: any): any;
-  done(): Promise;
+  done(): Promise<any>;
 }
 
 export interface Logger {
