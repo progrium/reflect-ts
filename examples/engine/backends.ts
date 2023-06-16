@@ -20,8 +20,8 @@ export interface SearchIndex {
 
 
 export interface FileStore {
-  async readFile(path: string): string|null;
-  async writeFile(path: string, contents: string);
+  readFile(path: string): Promise<string|null>;
+  writeFile(path: string, contents: string): Promise<void>;
 }
 
 
