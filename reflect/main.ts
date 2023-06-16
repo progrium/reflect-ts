@@ -1,6 +1,6 @@
 //
 // Run with:
-// > deno run --allow-read=.. --allow-write=.. .\main.ts ..\examples\mithril.ts
+// > deno run --allow-read=.. --allow-write=.. .\main.ts ..\examples\test.ts
 //
 
 import ts from "npm:typescript@5.0.4";
