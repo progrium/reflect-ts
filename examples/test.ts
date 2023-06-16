@@ -124,6 +124,7 @@ interface Developer extends Person, Employee { }
 
 type Node = string | number | boolean;
 interface NodeArray extends Array<Node> { }
+*/
 
 type Human = {
   name: string;
@@ -132,7 +133,6 @@ type Human = {
 type Computer_Programmer = Partial<Human> & {
   eatsPizza: boolean;
 };
-*/
 
 // 17
 /*
