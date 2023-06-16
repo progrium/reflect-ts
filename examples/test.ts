@@ -80,6 +80,10 @@ export interface Vnode {
 type Child = Vnode | string | number | boolean | null | undefined;
 interface ChildArray extends Array<Children> { }
 type Children = Child | ChildArray;
+
+export interface Component {
+  view(vnode: Vnode): Children | null | void;
+}
 */
 
 // 12
@@ -92,4 +96,13 @@ export type MyOptionalList = Array<string> | null;
 //export type MyObject = Record<string, string>;
 
 // 14
-export type StringList = string[];
+//export type StringList = string[];
+
+// 15
+import { Vector2 } from './math.ts';
+
+export type Rectangle = {
+  p0: Vector2;
+  p1: Vector2;
+};
+

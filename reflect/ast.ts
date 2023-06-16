@@ -3,11 +3,6 @@ import ts from "npm:typescript@5.0.4";
 
 const print = (...args) => console.log(...args);
 
-export const parseFromSource = (fileName, code) => {
-  const sourceFile = ts.createSourceFile(fileName, code, ts.ScriptTarget.Latest);
-  return sourceFile;
-};
-
 export const isExported = (node) => {
   if (ts.canHaveModifiers(node)) {
     const modifiers = ts.getModifiers(node) || [];
@@ -124,15 +119,6 @@ export const getMethods = (node) => {
   });
 }
 
-export const dumpTree = (node) => {
-  return {
-    kind: getKind(node.kind),
-    name: getName(node),
-    children: getChildren(node).map((child) => dumpTree(child)),
-    exported: isExported(node),
-  };
-};
-
 class Type {
   constructor(obj) {
     Object.assign(this, obj);
@@ -152,9 +138,19 @@ class Argument {
 };
 
 class Schema {
+  Types = {};
+
   constructor(obj) {
     Object.assign(this, obj);
   }
+
+  Exports = () => {
+    return Object.values(this.Types).filter((it) => it.Visibility === 'exported');
+  }
+
+  All = () => {
+    return Object.values(this.Types);
+  };
 };
 
 const makeType = (obj = {}) => new Type({
@@ -185,6 +181,9 @@ const makeType = (obj = {}) => new Type({
 
   Types: [], // for Unions
 
+  // for exports
+  Visibility: '',
+
   ...obj,
 });
 
@@ -195,7 +194,8 @@ const makeField = (obj = {}) => new Field({
   Anonymous: false,
 
   Optional: false,
-  AccessModifier: '',
+  // for class members (fields and methods)
+  Visibility: '',
 
   ...obj,
 });
@@ -206,10 +206,7 @@ const makeArgument = (obj = {}) => new Argument({
   ...obj,
 });
 
-const makeSchema = () => new Schema({
-  Exports: [],
-  Types: {},
-});
+const makeSchema = () => new Schema({});
 
 const makeInternalType = (schema, name) => {
   if (!schema.Types[name])
@@ -247,8 +244,28 @@ export const inflate = (node, context) => {
 
   switch (kind)
   {
+    case 'ImportDeclaration': {
+      const globalContext = context.global;
+      const importPath = path.resolve(path.dirname(filePath), node.moduleSpecifier.text);
+      const importSchema = processSourceFile(context.global, importPath);
+
+      node.importClause.namedBindings.elements.forEach((binding) => {
+        const name = getName(binding);
+        if (importSchema.Types[name]) {
+          schema.Types[name] = importSchema.Types[name];
+        } else {
+          print(`[inflate] ImportDeclaration: Warning, symbol name '${name}' not found in import path:`, importPath);
+        }
+      });
+
+      return null;
+    } break;
+
+    case 'TypeLiteral':
     case 'ClassDeclaration':
     case 'InterfaceDeclaration': {
+      // @Incomplete: parse `extends` keyword
+
       const result = makeType({ Name: name, Kind: 'struct', PkgPath: filePath });
 
       const props = getProperties(node);
@@ -264,7 +281,7 @@ export const inflate = (node, context) => {
           field.Optional = true;
         }
 
-        field.AccessModifier = getAccessModifier(prop);
+        field.Visibility = getAccessModifier(prop);
 
         result.Fields.push(field);
       });
@@ -283,9 +300,9 @@ export const inflate = (node, context) => {
           field.Optional = true;
         }
 
-        field.AccessModifier = getAccessModifier(method);
-        field.Self = result; // will produce a circlular reference (not JSON serializable!)
-        //field.Self = makeReferenceType(schema, result);
+        field.Visibility = getAccessModifier(prop);
+        //field.Self = result; // will produce a circlular reference (not JSON serializable!)
+        field.Self = makeReferenceType(schema, result);
 
         result.Methods.push(field);
       });
@@ -337,7 +354,7 @@ export const inflate = (node, context) => {
       // Otherwise, we can just expose the nested type directly, e.g.:
       // export type Bar = string | number;
       //
-      if (nestedType.PkgPath === '<internal>' || nestedType.PkgPath === '<unknown>')
+      if (nestedType && (nestedType.PkgPath === '<internal>' || nestedType.PkgPath === '<unknown>'))
       {
         const result = makeType({
           Kind: 'alias',
@@ -350,10 +367,13 @@ export const inflate = (node, context) => {
         return result;
       }
 
-      // @Incomplete: should we always overwrite this type?
-      nestedType.Name = name;
+      // @Incomplete: should we always overwrite the type name?
+      if (nestedType)
+      {
+        nestedType.Name = name;
+        schema.Types[name] = nestedType;
+      }
 
-      schema.Types[name] = nestedType;
       return nestedType;
     } break;
 
@@ -379,6 +399,11 @@ export const inflate = (node, context) => {
             Elem: node.typeArguments?.length > 0 ? inflate(node.typeArguments[1], context) : null,
           });
           return result;
+        }
+
+        // imported from another file
+        if (schema.Types[typeName]) {
+          return schema.Types[typeName];
         }
 
         // NOTE(nick): for things like Promise, etc.
@@ -424,8 +449,9 @@ export const inflate = (node, context) => {
     } break;
 
     case 'LiteralType': {
+      const code = rootNode.text;
       // @Incomplete: shouldn't null types actually be propagated upwards to make things optional?
-      const literalName = node.literal ? context.code.slice(node.pos, node.end).trim() : null;
+      const literalName = node.literal ? code.slice(node.pos, node.end).trim() : null;
       if (literalName === 'null') {
         return makeInternalType(schema, 'null');
       }
@@ -449,61 +475,80 @@ export const inflate = (node, context) => {
   }
 };
 
-export const generateSchemaFromFiles = (filePaths) => {
-  const schema = makeSchema();
+export const parseFromSource = (fileName, code) => {
+  const sourceFile = ts.createSourceFile(fileName, code, ts.ScriptTarget.Latest);
+  return sourceFile;
+};
 
-  for (let file_index = 0; file_index < filePaths.length; file_index += 1)
-  {
-    const filePath = path.resolve(filePaths[file_index]);
-    const code = Deno.readTextFileSync(filePath);
-    const rootNode = parseFromSource(filePath, code);
-
-    const children = getChildren(rootNode);
-
-    const context = {
-       code,
-       filePath,
-       schema,
-    };
-
-    for (let i = 0; i < children.length; i += 1)
-    {
-      const node = children[i];
-      const name = getName(node);
-      const exported = isExported(node);
-
-      const type = inflate(node, context);
-      if (type)
-      {
-        schema.Types[name] = type;
-
-        if (exported)
-        {
-          schema.Exports.push(type);
-        }
-      }
-    }
+export const processSourceFile = (globals, filePath) => {
+  if (globals.imports[filePath]) {
+    return globals.imports[filePath];
   }
 
-  /*
-  console.log(typeLUT);
+  print("[processSourceFile]", filePath);
 
-  const context = {};
+  const rootNode = globals.program.getSourceFile(filePath);
+  if (!rootNode) {
+    return null;
+  }
 
+  const schema = makeSchema();
+
+  const children = getChildren(rootNode);
   for (let i = 0; i < children.length; i += 1)
   {
     const node = children[i];
-    const exported = isExported(node);
-    if (exported)
+    const name = getName(node);
+
+    const context = {
+      global: globals,
+      rootNode,
+      filePath,
+      schema,
+    };
+
+    const type = inflate(node, context);
+    if (type)
     {
-      inflate(schema, node, context);
+      if (isExported(node))
+      {
+        type.Visibility = 'exported';
+        print("[processSourceFile] exported", name);
+      }
+
+      schema.Types[name] = type;
     }
   }
-  */
+
+  globals.imports[filePath] = schema;
+  return schema;
+};
+
+export const generateSchemaFromFiles = (filePaths, options) => {
+  filePaths = filePaths.map((it) => {
+    return path.resolve(it);
+  });
+
+  if (!options) {
+    options = {  compilerOptions: { target: ts.ScriptTarget.Latest } };
+  }
+
+  const program = ts.createProgram(filePaths, options);
+
+  const globalContext = {
+    imports: {},
+    program,
+  };
+
+  let schema = null;
+  for (let file_index = 0; file_index < filePaths.length; file_index += 1)
+  {
+    const filePath = filePaths[file_index];
+    schema = processSourceFile(globalContext, filePath);
+  }
 
   console.log("schema.Types =", schema.Types);
-  //console.log("schema.Exports =", schema.Exports.map((it) => it.Name));
-  console.log("schema.Exports =", schema.Exports);
+  console.log("schema.Exports =", schema.Exports().map((it) => it.Name));
 
   return schema;
 };

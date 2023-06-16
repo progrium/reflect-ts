@@ -39,10 +39,15 @@ const main = async () => {
   const f = await stat(filePath);
   assert(f, `File or directory not found: "${filePath}"`);
 
+  //assert(f.isFile, `Only files are supported, but got directory: "${filePath}"`);
+
   if (f.isFile)
   {
-    const schema = ast.generateSchemaFromFile(filePath);
-    
+    const schema = ast.generateSchemaFromFiles([
+      "C:\\dev\\_projects\\progrium\\reflect-ts\\examples\\test.ts",
+      "C:\\dev\\_projects\\progrium\\reflect-ts\\examples\\math.ts",
+    ]);
+
     const output = JSON.stringify(schema, null, 2);
     Deno.writeTextFileSync("output.json", output);
   }
