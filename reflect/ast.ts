@@ -232,7 +232,7 @@ const makeLiteralType = (schema, name) => {
 }
 
 const makeReferenceType = (schema, t) => {
-  const result = makeType({ Kind: 'ref', Name: t.Name, PkgPath: '<internal>' });
+  const result = makeType({ Kind: 'ref', Name: t.Name, PkgPath: '<ref>' });
   schema.Types[t.Name] = t;
   return result;
 }
@@ -327,25 +327,66 @@ export const inflate = (node, context) => {
     } break;
 
     case 'TypeAliasDeclaration': {
-      const declType = inflate(node.type, { ...context, parent: node });
-      if (declType) {
-        declType.Name = name;
+      const nestedType = inflate(node.type, { ...context, parent: node });
+
+      //
+      // NOTE(nick): if we're reffering directly to an internal type, e.g.:
+      // export type Foo = string;
+      //
+      // then we want some way to reference the internal type, so we generate a type alias.
+      // Otherwise, we can just expose the nested type directly, e.g.:
+      // export type Bar = string | number;
+      //
+      if (nestedType.PkgPath === '<internal>' || nestedType.PkgPath === '<unknown>')
+      {
+        const result = makeType({
+          Kind: 'alias',
+          Name: name,
+          Types: [nestedType],
+          PkgPath: filePath
+        });
+
+        schema.Types[name] = result;
+        return result;
       }
 
-      const result = makeType({
-        Kind: 'decl',
-        Name: name,
-        Types: declType ? [declType] : [],
-        PkgPath: filePath
-      });
+      nestedType.Name = name;
 
-      schema.Types[name] = result;
-      return result;
+      schema.Types[name] = nestedType;
+      return nestedType;
     } break;
 
     case 'TypeReference': {
+      if (node.typeName?.escapedText) {
+        const typeName = node.typeName.escapedText;
+
+        // NOTE(nick): special cases
+        if (typeName === 'Array') {
+          const result = makeType({
+            Kind: 'array',
+            PkgPath: filePath,
+            Elem: node.typeArguments?.length > 0 ? inflate(node.typeArguments[0], context) : null,
+          });
+          return result;
+        }
+
+        if (typeName === 'Record') {
+          const result = makeType({
+            Kind: 'map',
+            PkgPath: filePath,
+            Key: node.typeArguments?.length > 0 ? inflate(node.typeArguments[0], context) : null,
+            Elem: node.typeArguments?.length > 0 ? inflate(node.typeArguments[1], context) : null,
+          });
+          return result;
+        }
+
+        // NOTE(nick): for things like Promise, etc.
+        return makeLiteralType(schema, typeName);
+      }
+
       //
       // NOTE(nick): for cases like:
+      // type Bar2 = string | number;
       // export type Bar2;
       //
       // We rely on TypeAliasDeclaration to set the parent
@@ -353,11 +394,6 @@ export const inflate = (node, context) => {
       if (context.parent) {
         const parentName = getName(context.parent);
         return schema.Types[parentName];
-      }
-
-      if (node.typeName?.escapedText) {
-        // NOTE(nick): for things like Promise, etc.
-        return makeLiteralType(schema, node.typeName?.escapedText);
       }
 
       print("[inflate] TypeReference is missing context.parent!");
@@ -394,6 +430,16 @@ export const inflate = (node, context) => {
     case 'VoidKeyword':      { return makeInternalType(schema, 'void'); } break;
     case 'UndefinedKeyword': { return makeInternalType(schema, 'undefined'); } break;
     case 'AnyKeyword':       { return makeInternalType(schema, 'any'); } break;
+
+    case 'LiteralType': {
+      // @Incomplete: shouldn't null types actually be propagated upwards to make things optional?
+      const literalName = node.literal ? context.code.slice(node.pos, node.end).trim() : null;
+      if (literalName === 'null') {
+        return makeInternalType(schema, 'null');
+      }
+
+      print("[inflate] Unhandled literal type:", literalName);
+    } break;
 
     default: {
       print("[inflate] Unhandled TS node kind:", kind, name);
