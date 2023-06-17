@@ -34,19 +34,19 @@ const assert = (cond, message, ...rest) => {
 //
 
 const main = async () => {
-  const filePath = Deno.args[0];
+  const filePath = path.resolve(Deno.args[0]);
 
   const f = await stat(filePath);
   assert(f, `File or directory not found: "${filePath}"`);
 
-  //assert(f.isFile, `Only files are supported, but got directory: "${filePath}"`);
-
   let schema = null;
+  let relativePath = filePath;
 
   if (f.isFile)
   {
     // TODO(nick): allow an option to specify a tsconfig path?
     schema = ast.generateSchema(filePath);
+    relativePath = path.dirname(filePath);
   }
   else
   {
@@ -67,6 +67,8 @@ const main = async () => {
 
   if (schema)
   {
+    schema = ast.makeRelativeSchema(schema, path.dirname(relativePath));
+
     console.log("schema.Types =", schema.Types);
     console.log("schema.Exports =", schema.Exports().map((it) => it.Name));
 
