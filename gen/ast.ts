@@ -209,17 +209,37 @@ const makeArgument = (obj = {}) => new Argument({
 
 const makeSchema = () => new Schema({});
 
-const mergeSchemas = (a, b, options = { exportsOnly: false }) => {
+const toFullyQualifiedName = (it) => {
+  const prefix = it.PkgPath.split('.')[0];
+  return it.Name.startsWith(prefix) ? it.Name : `${prefix}.${it.Name}`;
+};
+
+const mergeSchemas = (a, b) => {
   const result = makeSchema();
 
   a.All().forEach((it) => {
-    const fullName = it.Name.startsWith(it.PkgPath) ? it.Name : `${it.PkgPath}__${it.Name}`;
+    const fullName = toFullyQualifiedName(it);
     result.Types[fullName] = it;
   });
 
   b.All().forEach((it) => {
-    const fullName = it.Name.startsWith(it.PkgPath) ? it.Name : `${it.PkgPath}__${it.Name}`;
+    const fullName = toFullyQualifiedName(it);
     result.Types[fullName] = it;
+  });
+
+  return result;
+};
+
+export const makeRelativeSchema = (schema, relativePath) => {
+  const result = makeSchema();
+
+  Object.keys(schema.Types).forEach((key) => {
+    let shortKey = key;
+    if (key.startsWith(relativePath)) {
+      shortKey = key.slice(relativePath.length, key.length);
+    }
+
+    result.Types[shortKey] = schema.Types[key];
   });
 
   return result;
