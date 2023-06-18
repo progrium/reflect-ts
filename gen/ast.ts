@@ -210,7 +210,8 @@ const makeArgument = (obj = {}) => new Argument({
 const makeSchema = () => new Schema({});
 
 const toFullyQualifiedName = (it) => {
-  const prefix = it.PkgPath.split('.')[0];
+  const ext = path.extname(it.PkgPath);
+  const prefix = ext.length > 0 ? it.PkgPath.slice(0, it.PkgPath.length - ext.length) : it.PkgPath;
   return it.Name.startsWith(prefix) ? it.Name : `${prefix}.${it.Name}`;
 };
 
