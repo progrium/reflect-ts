@@ -67,6 +67,10 @@ const main = async () => {
 
   if (schema)
   {
+    console.log("schema.Types =", schema.Types);
+    console.log("schema.Exports =", schema.Exports().map((it) => it.Name));
+
+    schema = ast.normalizeTypes(schema);
     schema = ast.makeRelativeSchema(schema, path.dirname(relativePath));
 
     console.log("schema.Types =", schema.Types);

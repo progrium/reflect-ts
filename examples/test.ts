@@ -20,15 +20,13 @@ export interface Point {
 */
 
 // 6
-/*
 export interface Printer {
   public label?: string;
 
-  print(verbose: false): string;
+  print(verbose: boolean): string;
 
   //foo: () => void;
 }
-*/
 
 // 7
 /*
@@ -124,7 +122,6 @@ interface Developer extends Person, Employee { }
 
 type Node = string | number | boolean;
 interface NodeArray extends Array<Node> { }
-*/
 
 type Human = {
   name: string;
@@ -133,6 +130,7 @@ type Human = {
 type Computer_Programmer = Partial<Human> & {
   eatsPizza: boolean;
 };
+*/
 
 // 17
 /*

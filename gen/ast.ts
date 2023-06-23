@@ -207,9 +207,10 @@ const makeArgument = (obj = {}) => new Argument({
   ...obj,
 });
 
-const makeSchema = () => new Schema({});
+const makeSchema = (obj = {}) => new Schema({...obj});
 
 const toFullyQualifiedName = (it) => {
+  if (!it.PkgPath) print({ it })
   const ext = path.extname(it.PkgPath);
   const prefix = ext.length > 0 ? it.PkgPath.slice(0, it.PkgPath.length - ext.length) : it.PkgPath;
   return it.Name.startsWith(prefix) ? it.Name : `${prefix}.${it.Name}`;
@@ -231,16 +232,138 @@ const mergeSchemas = (a, b) => {
   return result;
 };
 
+const relativeName = (prefix, key) => {
+  let result = key;
+  if (key.startsWith(prefix)) {
+    result = key.slice(prefix.length, key.length);
+  }
+  return result;
+}
+
 export const makeRelativeSchema = (schema, relativePath) => {
   const result = makeSchema();
 
   Object.keys(schema.Types).forEach((key) => {
-    let shortKey = key;
-    if (key.startsWith(relativePath)) {
-      shortKey = key.slice(relativePath.length, key.length);
-    }
-
+    const shortKey = relativeName(relativePath, key);
     result.Types[shortKey] = schema.Types[key];
+  });
+
+  const traverse = (node) => {
+    if (node.Types) node.Types.forEach((it) => traverse(it));
+    if (node.Extends) node.Extends.forEach((it) => traverse(it));
+    if (node.Methods) node.Methods.forEach((it) => traverse(it));
+    if (node.Fields) node.Fields.forEach((it) => traverse(it));
+    if (node.Ins) node.Ins.forEach((it) => traverse(it));
+    if (node.Outs) node.Outs.forEach((it) => traverse(it));
+
+    if (node.Type) traverse(node.Type);
+    if (node.Elem) traverse(node.Elem);
+    if (node.Key) traverse(node.Key);
+    if (node.Self) traverse(node.Self);
+
+    if (node.$type) {
+      node.$type = relativeName(relativePath, node.$type);
+    }
+  };
+
+  result.All().forEach((node) => traverse(node));
+
+  return result;
+};
+
+export const shallowClone = (node) => {
+  if (node instanceof Type) {
+    return makeType({...node});
+  }
+  if (node instanceof Field) {
+    return makeField({...node});
+  }
+  if (node instanceof Argument) {
+    return makeArgument({...node});
+  }
+  if (node instanceof Schema) {
+    return makeSchema({...node});
+  }
+  return {...node};
+};
+
+const makeTypeAlias = (schema, node) => {
+  if (!node) return null;
+
+  node.Name = node.Name || 'Anonymous';
+  node.PkgPath = node.PkgPath || '<unknown>';
+  const fqn = toFullyQualifiedName(node);
+  return { '$type': fqn };
+};
+
+export const flatten = (schema, node) => {
+  if (!node) {
+    return {};
+  }
+
+  const result = shallowClone(node);
+  result.Name = result.Name || 'Anonymous';
+  result.PkgPath = result.PkgPath || '<unknown>';
+  const fqn = toFullyQualifiedName(result);
+
+  if (result.Elem) {
+    flatten(schema, result.Elem);
+    result.Elem = makeTypeAlias(schema, result.Elem);
+  }
+
+  if (result.Key) {
+    flatten(schema, result.Key);
+    result.Key = makeTypeAlias(schema, result.Key);
+  }
+
+  const ret = {
+    ...result,
+    Types: result.Types.map((it) => {
+      const type = shallowClone(it);
+      flatten(schema, type);
+      return makeTypeAlias(schema, type);
+    }),
+    Extends: result.Extends.map((it) => {
+      const ext = shallowClone(it);
+      flatten(schema, ext);
+      return makeTypeAlias(schema, ext);
+    }),
+    Methods: result.Methods.map((it) => {
+      const method = shallowClone(it);
+      flatten(schema, method.Type);
+      method.Self = makeTypeAlias(schema, method.Self);
+      method.Type = makeTypeAlias(schema, method.Type);
+      return method;
+    }),
+    Fields: result.Fields.map((it) => {
+      const field = shallowClone(it);
+      flatten(schema, field.Type);
+      field.Type = makeTypeAlias(schema, field.Type);
+      return field;
+    }),
+    Ins: result.Ins.map((it) => {
+      const arg = shallowClone(it);
+      flatten(schema, arg.Type);
+      arg.Type = makeTypeAlias(schema, arg.Type);
+      return arg;
+    }),
+    Outs: result.Outs.map((it) => {
+      const type = shallowClone(it);
+      flatten(schema, type);
+      return makeTypeAlias(schema, type);
+    }),
+  };
+
+  schema.Types[fqn] = ret;
+  return ret;
+};
+
+export const normalizeTypes = (schema) => {
+  const result = shallowClone(schema);
+
+  result.All().forEach((type) => {
+    const fqn = toFullyQualifiedName(type);
+    flatten(result, type);
   });
 
   return result;
@@ -552,8 +675,15 @@ export const inflate = (node, context) => {
       if (literalName === 'null') {
         return makeInternalType(schema, 'null');
       }
+      if (literalName === 'true') {
+        return makeInternalType(schema, 'true');
+      }
+      if (literalName === 'false') {
+        return makeInternalType(schema, 'false');
+      }
 
       print("[inflate] Unhandled literal type:", literalName);
+      return makeLiteralType(schema, literalName);
     } break;
 
     case 'Identifier': {
