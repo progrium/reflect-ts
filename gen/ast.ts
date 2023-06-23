@@ -149,8 +149,32 @@ class Schema {
   };
 
   GetTypesByName = (name) => {
-    return this.All().filter((it) => it.name === name);
+    return this.All().filter((it) => it.Name === name);
   };
+
+  GetTypeByName = (name) => {
+    return this.All().find((it) => it.Name === name);
+  };
+
+  TypeOf = (x) => {
+    let result = null;
+    if ((typeof x === 'object' && x !== null) || (typeof x === 'function'))
+    {
+      const fqn = x.prototype.__fqn || x.__fqn;
+      if (typeof fqn === 'string') {
+        result = this.Types[fqn] || null;
+      }
+    }
+    return result;
+  }
+
+  AssignableTo = (t, dest) => {
+    if (t === dest) return true;
+    if (dest.Kind === 'struct') {
+      // TODO(nick): check if t fields overlap with dest fields (recursivley, if .Types)
+    }
+    return false;
+  }
 };
 
 const makeType = (obj = {}) => new Type({
@@ -209,10 +233,16 @@ const makeArgument = (obj = {}) => new Argument({
 
 const makeSchema = (obj = {}) => new Schema({...obj});
 
+// NOTE(nick): Normalize windows paths for consistency across platforms
+const normalizePath = (filePath) => {
+  return filePath.replaceAll('\\', '/');
+}
+
 const toFullyQualifiedName = (it) => {
-  if (!it.PkgPath) print({ it })
-  const ext = path.extname(it.PkgPath);
-  const prefix = ext.length > 0 ? it.PkgPath.slice(0, it.PkgPath.length - ext.length) : it.PkgPath;
+  const pkgPath = normalizePath(it.PkgPath);
+
+  const ext = path.extname(pkgPath);
+  const prefix = ext.length > 0 ? pkgPath.slice(0, pkgPath.length - ext.length) : pkgPath;
   return it.Name.startsWith(prefix) ? it.Name : `${prefix}.${it.Name}`;
 };
 
@@ -232,6 +262,34 @@ const mergeSchemas = (a, b) => {
   return result;
 };
 
+export const traverse = (node, fn, ctx = {}) => {
+  fn(node, ctx);
+
+  const parent = node;
+
+  if (typeof node.All === 'function') {
+    node.All().forEach((it, index) => traverse(it, fn, { parent, key: 'All', index }));
+  }
+
+  const traverseArray = (node, key) => {
+    if (Array.isArray(node[key])) {
+      node[key].forEach((it, index) => traverse(it, fn, { parent: node, key, index }));
+    }
+  }
+
+  traverseArray(node, 'Types');
+  traverseArray(node, 'Extends');
+  traverseArray(node, 'Methods');
+  traverseArray(node, 'Fields');
+  traverseArray(node, 'Ins');
+  traverseArray(node, 'Outs');
+
+  if (node.Type) traverse(node.Type, fn, { parent: node, key: 'Type', index: -1 });
+  if (node.Elem) traverse(node.Elem, fn, { parent: node, key: 'Elem', index: -1 });
+  if (node.Key) traverse(node.Key, fn, { parent: node, key: 'Key', index: -1 });
+  if (node.Self) traverse(node.Self, fn, { parent: node, key: 'Self', index: -1 });
+};
+
 const relativeName = (prefix, key) => {
   let result = key;
   if (key.startsWith(prefix)) {
@@ -243,30 +301,18 @@ const relativeName = (prefix, key) => {
 export const makeRelativeSchema = (schema, relativePath) => {
   const result = makeSchema();
 
+  relativePath = normalizePath(relativePath);
+
   Object.keys(schema.Types).forEach((key) => {
     const shortKey = relativeName(relativePath, key);
     result.Types[shortKey] = schema.Types[key];
   });
 
-  const traverse = (node) => {
-    if (node.Types) node.Types.forEach((it) => traverse(it));
-    if (node.Extends) node.Extends.forEach((it) => traverse(it));
-    if (node.Methods) node.Methods.forEach((it) => traverse(it));
-    if (node.Fields) node.Fields.forEach((it) => traverse(it));
-    if (node.Ins) node.Ins.forEach((it) => traverse(it));
-    if (node.Outs) node.Outs.forEach((it) => traverse(it));
-
-    if (node.Type) traverse(node.Type);
-    if (node.Elem) traverse(node.Elem);
-    if (node.Key) traverse(node.Key);
-    if (node.Self) traverse(node.Self);
-
+  traverse(result, (node) => {
     if (node.$type) {
       node.$type = relativeName(relativePath, node.$type);
     }
-  };
-
-  result.All().forEach((node) => traverse(node));
+  });
 
   return result;
 };
@@ -448,15 +494,17 @@ export const inflate = (node, context) => {
       const globalContext = context.global;
       const importPath = resolveImport(filePath, node.moduleSpecifier.text);
       const importSchema = processSourceFile(context.global, importPath);
-
-      node.importClause.namedBindings.elements.forEach((binding) => {
-        const name = getName(binding);
-        if (importSchema.Types[name]) {
-          schema.Types[name] = importSchema.Types[name];
-        } else {
-          print(`[inflate] ImportDeclaration: Warning, symbol name '${name}' not found in import path:`, importPath);
-        }
-      });
+      if (importSchema)
+      {
+        node.importClause.namedBindings.elements.forEach((binding) => {
+          const name = getName(binding);
+          if (importSchema.Types[name]) {
+            schema.Types[name] = importSchema.Types[name];
+          } else {
+            print(`[inflate] ImportDeclaration: Warning, symbol name '${name}' not found in import path:`, importPath);
+          }
+        });
+      }
 
       return null;
     } break;
@@ -797,16 +845,23 @@ export const followAllImportsFromFile = (filePath, tsTarget = ts.ScriptTarget.La
     const filePath = follow[0];
     seen[filePath] = true;
 
-    const code = Deno.readTextFileSync(filePath);
-    const sourceFile = ts.createSourceFile(filePath, code, ts.ScriptTarget.Latest);
+    let code = null;
+    try {
+      code = Deno.readTextFileSync(filePath);
+    } catch (err) {}
 
-    const children = getChildren(sourceFile).filter((it) => getKind(it) === 'ImportDeclaration');
-    for (let i = 0; i < children.length; i += 1)
+    if (code)
     {
-      const node = children[i];
-      const importPath = resolveImport(filePath, node.moduleSpecifier.text);
-      if (!seen[importPath]) {
-        follow.push(importPath);
+      const sourceFile = ts.createSourceFile(filePath, code, ts.ScriptTarget.Latest);
+
+      const children = getChildren(sourceFile).filter((it) => getKind(it) === 'ImportDeclaration');
+      for (let i = 0; i < children.length; i += 1)
+      {
+        const node = children[i];
+        const importPath = resolveImport(filePath, node.moduleSpecifier.text);
+        if (!seen[importPath]) {
+          follow.push(importPath);
+        }
       }
     }
 
@@ -833,4 +888,54 @@ export const toJSON = (schema) => {
   };
 
   return JSON.stringify(schema, replacer, 2);
+};
+
+export const loadSchema = (schema) => {
+  if (typeof schema === 'string')
+  {
+    try {
+      schema = JSON.parse(schema);
+    } catch(err) {
+    }
+  }
+
+  const result = makeSchema({ ...schema });
+
+  traverse(result, (node, { parent, key, index }) => {
+    if (node.$type) {
+      const type = result.Types[node.$type];
+      if (index >= 0) {
+        parent[key][index] = type;
+      } else {
+        parent[key] = type;
+      }
+    }
+  });
+
+  return result;
+};
+
+export const ReflectType = (clazz, fqn = null) => {
+  if (!fqn) {
+    const message = new Error().stack;
+    let file = message.split('at ')[2];
+
+    //
+    // NOTE(nick): in Deno this looks like:
+    // C:/dev/_projects/progrium/reflect-ts/gen/main.ts:14:5
+    //
+    if (file.startsWith('file:///')) file = file.slice('file:///'.length);
+
+    const lastSlash = file.lastIndexOf('/');
+    if (lastSlash >= 0) {
+      const lastColon = file.indexOf(':', lastSlash + 1);
+      if (lastColon >= 0) {
+        file = file.slice(0, lastColon);
+      }
+    }
+
+    fqn = toFullyQualifiedName({ Name: clazz.name, PkgPath: file });
+  }
+
+  clazz.__fqn = fqn;
 };

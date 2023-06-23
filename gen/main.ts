@@ -9,6 +9,14 @@ import { expandGlobSync } from "https://deno.land/std@0.121.0/fs/expand_glob.ts"
 
 import * as ast from './ast.ts';
 
+import { Foo } from '../examples/test.ts';
+
+/*
+class Foo {
+}
+ast.ReflectType(Foo);
+*/
+
 //
 // Helpers
 //
@@ -76,7 +84,15 @@ const main = async () => {
     console.log("schema.Types =", schema.Types);
     console.log("schema.Exports =", schema.Exports().map((it) => it.Name));
 
-    Deno.writeTextFileSync("output.json", ast.toJSON(schema));
+    const json = ast.toJSON(schema);
+    Deno.writeTextFileSync("output.json", json);
+
+    const testSchema = ast.loadSchema(json);
+    const fooSchema = testSchema.GetTypeByName('Foo');
+
+    const fooType = testSchema.TypeOf(Foo);
+
+    console.log(testSchema.AssignableTo(fooSchema, fooType));
   }
 };
 

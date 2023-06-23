@@ -20,13 +20,13 @@ export interface Point {
 */
 
 // 6
+/*
 export interface Printer {
   public label?: string;
 
   print(verbose: boolean): string;
-
-  //foo: () => void;
 }
+*/
 
 // 7
 /*
@@ -138,3 +138,8 @@ export interface Bank_Account {
   readonly balance: number;
 };
 */
+
+// 18
+export class Foo {
+}
+Foo.__fqn = '/examples/test.Foo';
