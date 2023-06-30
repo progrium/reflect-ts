@@ -1,4 +1,20 @@
-import path from 'node:path';
+//
+// NOTE(nick): stub for path extname because deno can't bundle the node:path module
+//
+const path__extname = (path) => {
+  const slashIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+
+  if (slashIndex >= 0)
+  {
+    const dotIndex = path.lastIndexOf('.', slashIndex);
+    if (dotIndex >= 0 && slashIndex < dotIndex)
+    {
+      return path.slice(dotIndex, path.length);
+    }
+  }
+
+  return path;
+};
 
 export class Type {
   constructor(obj) {
@@ -145,7 +161,7 @@ export const normalizePath = (filePath) => {
 export const toFullyQualifiedName = (it) => {
   const pkgPath = normalizePath(it.PkgPath);
 
-  const ext = path.extname(pkgPath);
+  const ext = path__extname(pkgPath);
   const prefix = ext.length > 0 ? pkgPath.slice(0, pkgPath.length - ext.length) : pkgPath;
   return it.Name.startsWith(prefix) ? it.Name : `${prefix}.${it.Name}`;
 };
