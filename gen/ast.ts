@@ -1,6 +1,12 @@
 import path from 'node:path';
 import ts from "npm:typescript@5.0.4";
 
+import {
+  Type, Field, Argument, Schema,
+  makeType, makeField, makeArgument, makeSchema,
+  normalizePath, toFullyQualifiedName, traverse,
+} from './shared.ts';
+
 const print = (...args) => console.log(...args);
 
 export const isExported = (node) => {
@@ -51,21 +57,24 @@ export const isOptional = (node) => {
 }
 
 export const getName = (node) => {
-  if (node.escapedText) {
-    return node.escapedText;
-  }
+  if (node)
+  {
+    if (node.escapedText) {
+      return node.escapedText;
+    }
 
-  if (node.name) {
-    return node.name.escapedText;
-  }
+    if (node.name) {
+      return node.name.escapedText;
+    }
 
-  if (node.typeName) {
-    return node.typeName.escapedText;
-  }
+    if (node.typeName) {
+      return node.typeName.escapedText;
+    }
 
-  if (node.declarationList?.declarations?.length > 0) {
-    const declarations = node.declarationList.declarations;
-    return declarations[0].name.escapedText;
+    if (node.declarationList?.declarations?.length > 0) {
+      const declarations = node.declarationList.declarations;
+      return declarations[0].name.escapedText;
+    }
   }
 
   return null;
@@ -115,136 +124,6 @@ export const getExtends = (node) => {
   return [];
 }
 
-class Type {
-  constructor(obj) {
-    Object.assign(this, obj);
-  }
-};
-
-class Field {
-  constructor(obj) {
-    Object.assign(this, obj);
-  }
-};
-
-class Argument {
-  constructor(obj) {
-    Object.assign(this, obj);
-  }
-};
-
-class Schema {
-  Types = {};
-
-  constructor(obj) {
-    Object.assign(this, obj);
-  }
-
-  Exports = () => {
-    return Object.values(this.Types).filter((it) => it.Visibility === 'exported');
-  }
-
-  All = () => {
-    return Object.values(this.Types);
-  };
-
-  GetTypesByName = (name) => {
-    return this.All().filter((it) => it.Name === name);
-  };
-
-  GetTypeByName = (name) => {
-    return this.All().find((it) => it.Name === name);
-  };
-
-  TypeOf = (x) => {
-    let result = null;
-    if ((typeof x === 'object' && x !== null) || (typeof x === 'function'))
-    {
-      const fqn = x.prototype.__fqn || x.__fqn;
-      if (typeof fqn === 'string') {
-        result = this.Types[fqn] || null;
-      }
-    }
-    return result;
-  }
-
-  AssignableTo = (t, dest) => {
-    if (t === dest) return true;
-    if (dest.Kind === 'struct') {
-      // TODO(nick): check if t fields overlap with dest fields (recursivley, if .Types)
-    }
-    return false;
-  }
-};
-
-const makeType = (obj = {}) => new Type({
-  Name: '',
-  PkgPath: '',
-  Kind: 'null',
-
-  // for Structs
-  Fields: [],
-
-  // for Classes
-  Methods: [],
-  Extends: [],
-
-  // for Funcs
-  IsVariadic: false,
-  Ins: [],
-  Outs: [],
-  Self: null, // for Methods
-
-  // for Maps
-  Key: null,
-
-  // for Arrays
-  Len: 0,
-
-  // for Array,Chan,Map,Pointer,Slice
-  Elem: null,
-
-  Types: [], // for Unions
-
-  // for exports
-  Visibility: '',
-
-  ...obj,
-});
-
-const makeField = (obj = {}) => new Field({
-  Name: '',
-  Type: null,
-  Offset: 0,
-  Anonymous: false,
-
-  Optional: false,
-  // for class members (fields and methods)
-  Visibility: '',
-
-  ...obj,
-});
-
-const makeArgument = (obj = {}) => new Argument({
-  Name: '',
-  Type: null,
-  ...obj,
-});
-
-const makeSchema = (obj = {}) => new Schema({...obj});
-
-// NOTE(nick): Normalize windows paths for consistency across platforms
-const normalizePath = (filePath) => {
-  return filePath.replaceAll('\\', '/');
-}
-
-const toFullyQualifiedName = (it) => {
-  const pkgPath = normalizePath(it.PkgPath);
-
-  const ext = path.extname(pkgPath);
-  const prefix = ext.length > 0 ? pkgPath.slice(0, pkgPath.length - ext.length) : pkgPath;
-  return it.Name.startsWith(prefix) ? it.Name : `${prefix}.${it.Name}`;
-};
 
 const mergeSchemas = (a, b) => {
   const result = makeSchema();
@@ -260,34 +139,6 @@ const mergeSchemas = (a, b) => {
   });
 
   return result;
-};
-
-export const traverse = (node, fn, ctx = {}) => {
-  fn(node, ctx);
-
-  const parent = node;
-
-  if (typeof node.All === 'function') {
-    node.All().forEach((it, index) => traverse(it, fn, { parent, key: 'All', index }));
-  }
-
-  const traverseArray = (node, key) => {
-    if (Array.isArray(node[key])) {
-      node[key].forEach((it, index) => traverse(it, fn, { parent: node, key, index }));
-    }
-  }
-
-  traverseArray(node, 'Types');
-  traverseArray(node, 'Extends');
-  traverseArray(node, 'Methods');
-  traverseArray(node, 'Fields');
-  traverseArray(node, 'Ins');
-  traverseArray(node, 'Outs');
-
-  if (node.Type) traverse(node.Type, fn, { parent: node, key: 'Type', index: -1 });
-  if (node.Elem) traverse(node.Elem, fn, { parent: node, key: 'Elem', index: -1 });
-  if (node.Key) traverse(node.Key, fn, { parent: node, key: 'Key', index: -1 });
-  if (node.Self) traverse(node.Self, fn, { parent: node, key: 'Self', index: -1 });
 };
 
 const relativeName = (prefix, key) => {
@@ -496,7 +347,7 @@ export const inflate = (node, context) => {
       const importSchema = processSourceFile(context.global, importPath);
       if (importSchema)
       {
-        node.importClause.namedBindings.elements.forEach((binding) => {
+        node.importClause.namedBindings.elements?.forEach((binding) => {
           const name = getName(binding);
           if (importSchema.Types[name]) {
             schema.Types[name] = importSchema.Types[name];
@@ -512,6 +363,8 @@ export const inflate = (node, context) => {
     case 'TypeLiteral':
     case 'ClassDeclaration':
     case 'InterfaceDeclaration': {
+      print("HERE!");
+
       // @Incomplete: parse `extends` keyword
       const result = makeType({ Name: name, Kind: 'struct', PkgPath: filePath });
 
@@ -830,7 +683,10 @@ export const generateSchemaFromFiles = (filePaths, tsCompilerOptions = null) => 
   {
     const filePath = filePaths[file_index];
     const fileSchema = processSourceFile(globalContext, filePath);
-    schema = mergeSchemas(schema, fileSchema);
+    if (fileSchema)
+    {
+      schema = mergeSchemas(schema, fileSchema);
+    }
   }
 
   return schema;
@@ -888,54 +744,4 @@ export const toJSON = (schema) => {
   };
 
   return JSON.stringify(schema, replacer, 2);
-};
-
-export const loadSchema = (schema) => {
-  if (typeof schema === 'string')
-  {
-    try {
-      schema = JSON.parse(schema);
-    } catch(err) {
-    }
-  }
-
-  const result = makeSchema({ ...schema });
-
-  traverse(result, (node, { parent, key, index }) => {
-    if (node.$type) {
-      const type = result.Types[node.$type];
-      if (index >= 0) {
-        parent[key][index] = type;
-      } else {
-        parent[key] = type;
-      }
-    }
-  });
-
-  return result;
-};
-
-export const ReflectType = (clazz, fqn = null) => {
-  if (!fqn) {
-    const message = new Error().stack;
-    let file = message.split('at ')[2];
-
-    //
-    // NOTE(nick): in Deno this looks like:
-    // C:/dev/_projects/progrium/reflect-ts/gen/main.ts:14:5
-    //
-    if (file.startsWith('file:///')) file = file.slice('file:///'.length);
-
-    const lastSlash = file.lastIndexOf('/');
-    if (lastSlash >= 0) {
-      const lastColon = file.indexOf(':', lastSlash + 1);
-      if (lastColon >= 0) {
-        file = file.slice(0, lastColon);
-      }
-    }
-
-    fqn = toFullyQualifiedName({ Name: clazz.name, PkgPath: file });
-  }
-
-  clazz.__fqn = fqn;
 };

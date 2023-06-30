@@ -1,3 +1,5 @@
+import * as reflect from '../gen/reflect.ts';
+
 // 1
 //export type Foo = string;
 
@@ -142,4 +144,5 @@ export interface Bank_Account {
 // 18
 export class Foo {
 }
-Foo.__fqn = '/examples/test.Foo';
+
+reflect.ReflectType(Foo);

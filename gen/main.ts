@@ -8,6 +8,7 @@ import path from 'node:path';
 import { expandGlobSync } from "https://deno.land/std@0.121.0/fs/expand_glob.ts";
 
 import * as ast from './ast.ts';
+import * as reflect from './reflect.ts';
 
 import { Foo } from '../examples/test.ts';
 
@@ -87,10 +88,12 @@ const main = async () => {
     const json = ast.toJSON(schema);
     Deno.writeTextFileSync("output.json", json);
 
-    const testSchema = ast.loadSchema(json);
+    const testSchema = reflect.loadSchema(json);
     const fooSchema = testSchema.GetTypeByName('Foo');
 
     const fooType = testSchema.TypeOf(Foo);
+
+    console.log({ fooSchema, fooType });
 
     console.log(testSchema.AssignableTo(fooSchema, fooType));
   }
