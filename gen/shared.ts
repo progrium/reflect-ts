@@ -87,12 +87,46 @@ export class Schema {
     return result;
   }
 
-  AssignableTo = (t, dest) => {
-    if (!t || !dest) return false;
-    if (t === dest) return true;
-    if (dest.Kind === 'struct') {
-      // TODO(nick): check if t fields overlap with dest fields (recursivley, if .Types)
+  AssignableTo = (src, dest) => {
+
+    if (!src || !dest) return false;
+
+    console.log('AssignableTo', src.Name, src.Kind, '->', dest.Name, dest.Kind);
+
+    if (src === dest) return true;
+
+    if (src.Kind === 'alias') return this.AssignableTo(src.Types[0], dest);
+    if (dest.Kind === 'alias') return this.AssignableTo(src, dest.Types[0]);
+
+    if (src.Kind === 'struct')
+    {
+      if (dest.Kind === 'type' && dest.Name === 'object') return true;
     }
+
+    if (src.Types?.length > 0)
+    {
+      if (src.Kind === 'union')
+      {
+        return src.Types.some((it) => this.AssignableTo(it, dest));
+      }
+
+      // NOTE(nick): intersection or struct
+      return src.Types.every((it) => this.AssignableTo(it, dest));
+    }
+
+    if (dest.Types?.length > 0)
+    {
+      if (dest.Kind === 'union')
+      {
+          return dest.Types.some((it) => this.AssignableTo(src, it));
+      }
+
+      if (dest.Kind === 'struct')
+      {
+        return src.Types.every((it) => this.AssignableTo(it, dest));
+      }
+    }
+
     return false;
   }
 };
@@ -129,6 +163,8 @@ export const makeType = (obj = {}) => new Type({
   // for exports
   Visibility: '',
 
+  Comment: '',
+
   ...obj,
 });
 
@@ -141,6 +177,8 @@ export const makeField = (obj = {}) => new Field({
   Optional: false,
   // for class members (fields and methods)
   Visibility: '',
+  
+  Comment: '',
 
   ...obj,
 });
@@ -148,6 +186,7 @@ export const makeField = (obj = {}) => new Field({
 export const makeArgument = (obj = {}) => new Argument({
   Name: '',
   Type: null,
+  Comment: '',
   ...obj,
 });
 

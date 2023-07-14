@@ -331,11 +331,21 @@ const resolveImport = (currentFilePath, importPath) => {
   return path.resolve(path.dirname(currentFilePath), importPath);
 };
 
+const getCommentString = (fullText, node) => {
+  if (node) {
+    const ranges = ts.getLeadingCommentRanges(fullText, node.getFullStart());
+    return (ranges || []).map((r) => fullText.slice(r.pos, r.end)).join('\n');
+  }
+  return '';
+};
+
 export const inflate = (node, context) => {
   const { schema, filePath } = context;
 
   const kind = getKind(node);
   const name = getName(node);
+
+  //const comment = context.rootNode ? getCommentString(context.rootNode.getFullText(), node) : '';
 
   print("[inflate]", { kind, name });
 
@@ -363,10 +373,12 @@ export const inflate = (node, context) => {
     case 'TypeLiteral':
     case 'ClassDeclaration':
     case 'InterfaceDeclaration': {
-      print("HERE!");
-
-      // @Incomplete: parse `extends` keyword
-      const result = makeType({ Name: name, Kind: 'struct', PkgPath: filePath });
+      const result = makeType({
+        Name: name,
+        Kind: 'struct',
+        PkgPath: filePath,
+        //Comment: getCommentString(context.rootNode.getFullText(), node),
+      });
 
       const props = getProperties(node);
       props.forEach((prop) => {

@@ -142,7 +142,44 @@ export interface Bank_Account {
 */
 
 // 18
+/*
 export class Foo {
 }
-
 reflect.ReflectType(Foo);
+*/
+
+// 19
+/*
+export type Number = number;
+
+export type Object = object;
+
+export type NumberOrString = number | string;
+
+export class MyObject {
+  foo: string;
+  bar: number;
+}
+
+export type A = {
+  x: number;
+  y: string;
+};
+
+export type B = {
+  x: number;
+  y: string;
+  z: boolean;
+};
+*/
+
+// 20
+/*
+class Entity {
+  lifeSatisfaction: number;
+};
+
+class Player extends Entity {
+  happinessLevel: number;
+};
+*/

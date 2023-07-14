@@ -88,14 +88,16 @@ const main = async () => {
     const json = ast.toJSON(schema);
     Deno.writeTextFileSync("output.json", json);
 
-    const testSchema = reflect.loadSchema(json);
-    const fooSchema = testSchema.GetTypeByName('Foo');
+    const s = reflect.loadSchema(json);
+    const number = s.GetTypeByName('Number');
+    const numberOrString = s.GetTypeByName('NumberOrString');
 
-    const fooType = testSchema.TypeOf(Foo);
+    //assert(s.AssignableTo(number, numberOrString), "Number is not AssignableTo NumberOrString");
 
-    console.log({ fooSchema, fooType });
-
-    console.log(testSchema.AssignableTo(fooSchema, fooType));
+    const obj = s.GetTypeByName('Object');
+    const myObj = s.GetTypeByName('MyObject');
+    console.log("----------");
+    console.log(s.AssignableTo(myObj, obj), "MyObject should be AssignableTo Object");
   }
 };
 
