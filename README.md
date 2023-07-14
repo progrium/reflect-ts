@@ -28,3 +28,10 @@ node build.js
 This will build the web target to `./build/`
 
 ### Running demo in Browser
+
+```bash
+cd build
+python3 -m http.server
+```
+
+Then open http://localhost:8000.
