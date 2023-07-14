@@ -1,5 +1,3 @@
-import * as reflect from '../gen/reflect.ts';
-
 // 1
 //export type Foo = string;
 
@@ -170,16 +168,5 @@ export type B = {
   x: number;
   y: string;
   z: boolean;
-};
-*/
-
-// 20
-/*
-class Entity {
-  lifeSatisfaction: number;
-};
-
-class Player extends Entity {
-  happinessLevel: number;
 };
 */

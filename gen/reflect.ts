@@ -25,27 +25,29 @@ export const loadSchema = (schema) => {
   return result;
 };
 
-export const ReflectType = (clazz, fqn = null) => {
-  if (!fqn) {
+export const Type = (clazz, file = null) => {
+  if (!file) {
     const message = new Error().stack;
-    let file = message.split('at ')[2];
-
-    //
-    // NOTE(nick): in Deno this looks like:
-    // C:/dev/_projects/progrium/reflect-ts/gen/main.ts:14:5
-    //
-    if (file.startsWith('file:///')) file = file.slice('file:///'.length);
-
-    const lastSlash = file.lastIndexOf('/');
-    if (lastSlash >= 0) {
-      const lastColon = file.indexOf(':', lastSlash + 1);
-      if (lastColon >= 0) {
-        file = file.slice(0, lastColon);
-      }
-    }
-
-    fqn = toFullyQualifiedName({ Name: clazz.name, PkgPath: file });
+    file = message.split('at ')[2];
   }
 
+  //
+  // NOTE(nick): in Deno this looks like:
+  // C:/dev/_projects/progrium/reflect-ts/gen/main.ts:14:5
+  //
+  if (file.includes('file:///')) {
+    const index = file.indexOf('file:///');
+    file = file.slice(index + 'file:///'.length);
+  }
+
+  const lastSlash = file.lastIndexOf('/');
+  if (lastSlash >= 0) {
+    const lastColon = file.indexOf(':', lastSlash + 1);
+    if (lastColon >= 0) {
+      file = file.slice(0, lastColon);
+    }
+  }
+
+  const fqn = toFullyQualifiedName({ Name: clazz.name, PkgPath: file });
   clazz.__fqn = fqn;
 };

@@ -3,6 +3,11 @@
 // > deno run --allow-read=.. --allow-write=.. .\main.ts ..\examples\test.ts
 //
 
+//
+// Bundle for web with:
+// > yarn run esbuild --bundle .\examples\test.ts --outdir=build --target=es2018 --sourcemap
+//
+
 import ts from "npm:typescript@5.0.4";
 import path from 'node:path';
 import { expandGlobSync } from "https://deno.land/std@0.121.0/fs/expand_glob.ts";
@@ -10,13 +15,7 @@ import { expandGlobSync } from "https://deno.land/std@0.121.0/fs/expand_glob.ts"
 import * as ast from './ast.ts';
 import * as reflect from './reflect.ts';
 
-import { Foo } from '../examples/test.ts';
-
-/*
-class Foo {
-}
-ast.ReflectType(Foo);
-*/
+import { Player } from '../examples/test.ts';
 
 //
 // Helpers
@@ -89,15 +88,10 @@ const main = async () => {
     Deno.writeTextFileSync("output.json", json);
 
     const s = reflect.loadSchema(json);
-    const number = s.GetTypeByName('Number');
-    const numberOrString = s.GetTypeByName('NumberOrString');
+    console.log(s)
 
-    //assert(s.AssignableTo(number, numberOrString), "Number is not AssignableTo NumberOrString");
-
-    const obj = s.GetTypeByName('Object');
-    const myObj = s.GetTypeByName('MyObject');
-    console.log("----------");
-    console.log(s.AssignableTo(myObj, obj), "MyObject should be AssignableTo Object");
+    const t = s.TypeOf(Player);
+    console.log({ t })
   }
 };
 

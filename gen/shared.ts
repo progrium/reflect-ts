@@ -62,6 +62,8 @@ export class Schema {
     if ((typeof x === 'object' && x !== null) || (typeof x === 'function'))
     {
       const fqn = x.prototype.__fqn || x.__fqn;
+      console.log('[TypeOf]', { fqn });
+
       if (typeof fqn === 'string')
       {
         result = this.Types[fqn] || null;
