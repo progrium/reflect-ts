@@ -3,11 +3,19 @@
 // > deno run --allow-read=.. --allow-write=.. .\main.ts ..\examples\test.ts
 //
 
+//
+// Bundle for web with:
+// > yarn run esbuild --bundle .\examples\test.ts --outdir=build --target=es2018 --sourcemap
+//
+
 import ts from "npm:typescript@5.0.4";
 import path from 'node:path';
 import { expandGlobSync } from "https://deno.land/std@0.121.0/fs/expand_glob.ts";
 
 import * as ast from './ast.ts';
+import * as reflect from './reflect.ts';
+
+import { Player } from '../examples/test.ts';
 
 //
 // Helpers
@@ -76,7 +84,14 @@ const main = async () => {
     console.log("schema.Types =", schema.Types);
     console.log("schema.Exports =", schema.Exports().map((it) => it.Name));
 
-    Deno.writeTextFileSync("output.json", ast.toJSON(schema));
+    const json = ast.toJSON(schema);
+    Deno.writeTextFileSync("output.json", json);
+
+    const s = reflect.loadSchema(json);
+    console.log(s)
+
+    const t = s.TypeOf(Player);
+    console.log({ t })
   }
 };
 

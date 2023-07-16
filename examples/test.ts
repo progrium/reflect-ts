@@ -20,13 +20,13 @@ export interface Point {
 */
 
 // 6
+/*
 export interface Printer {
   public label?: string;
 
   print(verbose: boolean): string;
-
-  //foo: () => void;
 }
+*/
 
 // 7
 /*
@@ -136,5 +136,37 @@ type Computer_Programmer = Partial<Human> & {
 /*
 export interface Bank_Account {
   readonly balance: number;
+};
+*/
+
+// 18
+/*
+export class Foo {
+}
+reflect.ReflectType(Foo);
+*/
+
+// 19
+/*
+export type Number = number;
+
+export type Object = object;
+
+export type NumberOrString = number | string;
+
+export class MyObject {
+  foo: string;
+  bar: number;
+}
+
+export type A = {
+  x: number;
+  y: string;
+};
+
+export type B = {
+  x: number;
+  y: string;
+  z: boolean;
 };
 */

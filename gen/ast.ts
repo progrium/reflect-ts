@@ -1,6 +1,12 @@
 import path from 'node:path';
 import ts from "npm:typescript@5.0.4";
 
+import {
+  Type, Field, Argument, Schema,
+  makeType, makeField, makeArgument, makeSchema,
+  normalizePath, toFullyQualifiedName, traverse,
+} from './shared.ts';
+
 const print = (...args) => console.log(...args);
 
 export const isExported = (node) => {
@@ -51,21 +57,24 @@ export const isOptional = (node) => {
 }
 
 export const getName = (node) => {
-  if (node.escapedText) {
-    return node.escapedText;
-  }
+  if (node)
+  {
+    if (node.escapedText) {
+      return node.escapedText;
+    }
 
-  if (node.name) {
-    return node.name.escapedText;
-  }
+    if (node.name) {
+      return node.name.escapedText;
+    }
 
-  if (node.typeName) {
-    return node.typeName.escapedText;
-  }
+    if (node.typeName) {
+      return node.typeName.escapedText;
+    }
 
-  if (node.declarationList?.declarations?.length > 0) {
-    const declarations = node.declarationList.declarations;
-    return declarations[0].name.escapedText;
+    if (node.declarationList?.declarations?.length > 0) {
+      const declarations = node.declarationList.declarations;
+      return declarations[0].name.escapedText;
+    }
   }
 
   return null;
@@ -115,106 +124,6 @@ export const getExtends = (node) => {
   return [];
 }
 
-class Type {
-  constructor(obj) {
-    Object.assign(this, obj);
-  }
-};
-
-class Field {
-  constructor(obj) {
-    Object.assign(this, obj);
-  }
-};
-
-class Argument {
-  constructor(obj) {
-    Object.assign(this, obj);
-  }
-};
-
-class Schema {
-  Types = {};
-
-  constructor(obj) {
-    Object.assign(this, obj);
-  }
-
-  Exports = () => {
-    return Object.values(this.Types).filter((it) => it.Visibility === 'exported');
-  }
-
-  All = () => {
-    return Object.values(this.Types);
-  };
-
-  GetTypesByName = (name) => {
-    return this.All().filter((it) => it.name === name);
-  };
-};
-
-const makeType = (obj = {}) => new Type({
-  Name: '',
-  PkgPath: '',
-  Kind: 'null',
-
-  // for Structs
-  Fields: [],
-
-  // for Classes
-  Methods: [],
-  Extends: [],
-
-  // for Funcs
-  IsVariadic: false,
-  Ins: [],
-  Outs: [],
-  Self: null, // for Methods
-
-  // for Maps
-  Key: null,
-
-  // for Arrays
-  Len: 0,
-
-  // for Array,Chan,Map,Pointer,Slice
-  Elem: null,
-
-  Types: [], // for Unions
-
-  // for exports
-  Visibility: '',
-
-  ...obj,
-});
-
-const makeField = (obj = {}) => new Field({
-  Name: '',
-  Type: null,
-  Offset: 0,
-  Anonymous: false,
-
-  Optional: false,
-  // for class members (fields and methods)
-  Visibility: '',
-
-  ...obj,
-});
-
-const makeArgument = (obj = {}) => new Argument({
-  Name: '',
-  Type: null,
-  ...obj,
-});
-
-const makeSchema = (obj = {}) => new Schema({...obj});
-
-const toFullyQualifiedName = (it) => {
-  if (!it.PkgPath) print({ it })
-  const ext = path.extname(it.PkgPath);
-  const prefix = ext.length > 0 ? it.PkgPath.slice(0, it.PkgPath.length - ext.length) : it.PkgPath;
-  return it.Name.startsWith(prefix) ? it.Name : `${prefix}.${it.Name}`;
-};
 
 const mergeSchemas = (a, b) => {
   const result = makeSchema();
@@ -243,30 +152,18 @@ const relativeName = (prefix, key) => {
 export const makeRelativeSchema = (schema, relativePath) => {
   const result = makeSchema();
 
+  relativePath = normalizePath(relativePath);
+
   Object.keys(schema.Types).forEach((key) => {
     const shortKey = relativeName(relativePath, key);
     result.Types[shortKey] = schema.Types[key];
   });
 
-  const traverse = (node) => {
-    if (node.Types) node.Types.forEach((it) => traverse(it));
-    if (node.Extends) node.Extends.forEach((it) => traverse(it));
-    if (node.Methods) node.Methods.forEach((it) => traverse(it));
-    if (node.Fields) node.Fields.forEach((it) => traverse(it));
-    if (node.Ins) node.Ins.forEach((it) => traverse(it));
-    if (node.Outs) node.Outs.forEach((it) => traverse(it));
-
-    if (node.Type) traverse(node.Type);
-    if (node.Elem) traverse(node.Elem);
-    if (node.Key) traverse(node.Key);
-    if (node.Self) traverse(node.Self);
-
+  traverse(result, (node) => {
     if (node.$type) {
       node.$type = relativeName(relativePath, node.$type);
     }
-  };
-
-  result.All().forEach((node) => traverse(node));
+  });
 
   return result;
 };
@@ -434,11 +331,21 @@ const resolveImport = (currentFilePath, importPath) => {
   return path.resolve(path.dirname(currentFilePath), importPath);
 };
 
+const getCommentString = (fullText, node) => {
+  if (node) {
+    const ranges = ts.getLeadingCommentRanges(fullText, node.getFullStart());
+    return (ranges || []).map((r) => fullText.slice(r.pos, r.end)).join('\n');
+  }
+  return '';
+};
+
 export const inflate = (node, context) => {
   const { schema, filePath } = context;
 
   const kind = getKind(node);
   const name = getName(node);
+
+  //const comment = context.rootNode ? getCommentString(context.rootNode.getFullText(), node) : '';
 
   print("[inflate]", { kind, name });
 
@@ -448,15 +355,17 @@ export const inflate = (node, context) => {
       const globalContext = context.global;
       const importPath = resolveImport(filePath, node.moduleSpecifier.text);
       const importSchema = processSourceFile(context.global, importPath);
-
-      node.importClause.namedBindings.elements.forEach((binding) => {
-        const name = getName(binding);
-        if (importSchema.Types[name]) {
-          schema.Types[name] = importSchema.Types[name];
-        } else {
-          print(`[inflate] ImportDeclaration: Warning, symbol name '${name}' not found in import path:`, importPath);
-        }
-      });
+      if (importSchema)
+      {
+        node.importClause.namedBindings.elements?.forEach((binding) => {
+          const name = getName(binding);
+          if (importSchema.Types[name]) {
+            schema.Types[name] = importSchema.Types[name];
+          } else {
+            print(`[inflate] ImportDeclaration: Warning, symbol name '${name}' not found in import path:`, importPath);
+          }
+        });
+      }
 
       return null;
     } break;
@@ -464,8 +373,12 @@ export const inflate = (node, context) => {
     case 'TypeLiteral':
     case 'ClassDeclaration':
     case 'InterfaceDeclaration': {
-      // @Incomplete: parse `extends` keyword
-      const result = makeType({ Name: name, Kind: 'struct', PkgPath: filePath });
+      const result = makeType({
+        Name: name,
+        Kind: 'struct',
+        PkgPath: filePath,
+        //Comment: getCommentString(context.rootNode.getFullText(), node),
+      });
 
       const props = getProperties(node);
       props.forEach((prop) => {
@@ -782,7 +695,10 @@ export const generateSchemaFromFiles = (filePaths, tsCompilerOptions = null) => 
   {
     const filePath = filePaths[file_index];
     const fileSchema = processSourceFile(globalContext, filePath);
-    schema = mergeSchemas(schema, fileSchema);
+    if (fileSchema)
+    {
+      schema = mergeSchemas(schema, fileSchema);
+    }
   }
 
   return schema;
@@ -797,16 +713,23 @@ export const followAllImportsFromFile = (filePath, tsTarget = ts.ScriptTarget.La
     const filePath = follow[0];
     seen[filePath] = true;
 
-    const code = Deno.readTextFileSync(filePath);
-    const sourceFile = ts.createSourceFile(filePath, code, ts.ScriptTarget.Latest);
+    let code = null;
+    try {
+      code = Deno.readTextFileSync(filePath);
+    } catch (err) {}
 
-    const children = getChildren(sourceFile).filter((it) => getKind(it) === 'ImportDeclaration');
-    for (let i = 0; i < children.length; i += 1)
+    if (code)
     {
-      const node = children[i];
-      const importPath = resolveImport(filePath, node.moduleSpecifier.text);
-      if (!seen[importPath]) {
-        follow.push(importPath);
+      const sourceFile = ts.createSourceFile(filePath, code, ts.ScriptTarget.Latest);
+
+      const children = getChildren(sourceFile).filter((it) => getKind(it) === 'ImportDeclaration');
+      for (let i = 0; i < children.length; i += 1)
+      {
+        const node = children[i];
+        const importPath = resolveImport(filePath, node.moduleSpecifier.text);
+        if (!seen[importPath]) {
+          follow.push(importPath);
+        }
       }
     }
 
