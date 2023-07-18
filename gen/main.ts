@@ -15,7 +15,7 @@ import { expandGlobSync } from "https://deno.land/std@0.121.0/fs/expand_glob.ts"
 import * as ast from './ast.ts';
 import * as reflect from './reflect.ts';
 
-import { Player } from '../examples/test.ts';
+//import { Player } from '../examples/demo/demo.ts';
 
 //
 // Helpers
@@ -88,10 +88,10 @@ const main = async () => {
     Deno.writeTextFileSync("output.json", json);
 
     const s = reflect.loadSchema(json);
-    console.log(s)
+    console.log(s);
 
-    const t = s.TypeOf(Player);
-    console.log({ t })
+    //const t = s.TypeOf(Player);
+    //console.log({ t })
   }
 };
 
